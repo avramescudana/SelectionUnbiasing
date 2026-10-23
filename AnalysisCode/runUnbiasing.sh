@@ -7,7 +7,7 @@
 #       $(/data/ALEPH/MC/mcgen/fastjet-install/bin/fastjet-config --cxxflags --libs) \
 #       -o unbias_weights
 #
-# NOTE: run claude/driveBins.C first (root -l -b -q claude/driveBins.C). It
+# NOTE: run driveBins.C first (root -l -b -q driveBins.C). It
 # calls startBasis.C once per bin, writing each bin's own
 # startBasis_<bin>.root, unbiasing_config_<bin>.env (bin center + pT window +
 # subjet radii + EEC terms file path), and

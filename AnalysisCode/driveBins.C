@@ -14,6 +14,17 @@
 // a bin at its own copy instead (and edit that copy) once you want the two
 // bins to diverge.
 //
+// pT-DEPENDENT EEC ANGULAR CUTOFFS: the E column of the EEC terms CSV (and
+// unbias_weights.cc's --dR-min) are REFERENCE cutoffs at pT = 100 GeV.
+// unbias_weights.cc applies, per bin,
+//     E_used      = E      * 100 / BinCenter
+//     dR_min_used = dR_min * 100 / BinCenter
+// where BinCenter is the value this macro writes for that bin
+// ("Unbiasing.BinCenter": the pT-window midpoint when binCenter <= 0, or
+// binCenter itself when > 0). Subjet radii are NOT scaled. With the
+// midpoint defaults below: bin 100-140 (center 120) -> scale 0.8333,
+// bin 140-180 (center 160) -> scale 0.625.
+//
 // Usage:
 //   root -l -b -q driveBins.C
 //
@@ -24,6 +35,7 @@
 //
 // Reads (shared by both bins):
 //   eec_terms_example.csv                     -- the EEC (A,B,m,E) term grid
+//                                                (E = reference cut at 100 GeV)
 
 // Pull in startBasis.C's definition directly (rather than loading it at
 // runtime via gROOT->ProcessLine(".L startBasis.C")) so the call below
@@ -38,7 +50,7 @@ void driveBins() {
   const double p = 8.0;
   const double d = 0.1;
   const unsigned rngSeed = 12345;
-  const double binCenter = -1.0;              // derive from the pT window (midpoint)
+  const double binCenter = -1.0;              // derive from the pT window (midpoint); also sets the EEC angular-cutoff scale 100/BinCenter
   const char* subjetRadii = "0.10,0.20";              // same subjet radii for both bins, for now
   const char* eecTermsFile = "eec_terms_example.csv"; // shared EEC term grid for both bins, for now
 

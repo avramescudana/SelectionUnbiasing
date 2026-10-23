@@ -53,6 +53,20 @@
 //   radii exactly as before; there is no CLI override for the EEC term
 //   grid -- edit that bin's CSV file instead.
 //
+// pT-dependent EEC angular cutoffs:
+//   The two EEC angular cutoffs are given as REFERENCE values and scaled
+//   per pT bin by  kAngularCutRefPt / BinCenter  (= 100 / BinCenter), where
+//   BinCenter is this bin's "Unbiasing.BinCenter" from --config (NOT the
+//   --eec-norm override):
+//     * upper cut  E      (the E column of the EEC terms CSV):
+//                          E_used      = E      * 100 / BinCenter
+//     * lower screen dR_min (--dR-min, default 0.001):
+//                          dR_min_used = dR_min * 100 / BinCenter
+//   e.g. BinCenter = 120: E = 0.1 -> 0.0833, E = 0.4 -> 0.333,
+//   dR_min = 0.001 -> 0.000833. The subjet radii are NOT scaled.
+//   The scaled values are what enter the fit (and the basis labels); the
+//   scale factor and the scaled dR_min are recorded in the "meta" tree.
+//
 // Subjet input: ppjets_root.cc clusters C/A subjets at ntuple-production
 // time over a radius scan R = 0.01..0.20 and stores them in branches
 // "subjet_pt_R0pXX".  The subjet-moment functions consume those stored
@@ -63,6 +77,23 @@
 // implementation ("fastjet"), kept side by side as a crosscheck of
 // implementation (same algorithm, same radius, same massless E-scheme
 // inputs).
+//
+// Jet-level eta/phi/mass passthrough:
+//   If the input tree carries scalar "eta"/"phi"/"mass" branches for each
+//   jet (array-style trees, e.g. tgenBefore: float arrays sized nJets,
+//   matching "pt"; flat trees, e.g. startBasis.C's tX/tY/tRef/tBiased/...:
+//   plain scalar floats -- both conventions are already used elsewhere in
+//   this chain), they are forwarded as-is into this tool's own "tweights"
+//   output tree (new "eta"/"phi"/"mass" branches, source jets only).
+//   Nothing here recomputes them from constituents. These three branches
+//   are ALL-OR-NOTHING: if any one of "eta"/"phi"/"mass" is missing from
+//   the input tree, none are written to the output (no partial or
+//   zero-filled branches). plot_unbias_weights.cc's jet-mass crosscheck
+//   relies on the stored "mass"; its broadening/generalised-angularity
+//   crosscheck relies on the stored "eta"/"phi" as the jet axis for
+//   Delta R_i,jet. If these branches are absent, those two crosschecks
+//   are simply skipped downstream -- there is no fallback that
+//   re-derives them from constituents here or in the plotter.
 //
 // Numerical safeguards:
 //   * dR_min screen on the EEC basis (ΔR^{−A} diverges as ΔR→0).
@@ -89,7 +120,8 @@
 //   --subjet-powers "3,4,...,10"      powers n for the moment family
 //   --subjet-R    <R>                 single-radius shortcut (default 0.1)
 //   --subjet-source {auto,precomputed,recluster,fastjet}   how to obtain subjets
-//   --dR-min      <val>               EEC small-angle screen (default 1e-3)
+//   --dR-min      <val>               EEC small-angle screen, REFERENCE value
+//                                     (default 1e-3; scaled by 100/BinCenter)
 //
 // The default basis has no per-run override flags for the EEC term grid --
 // it always comes from this bin's --config Unbiasing.EECTermsFile CSV. The
@@ -117,6 +149,11 @@
 #include <vector>
 
 #define MAXJ 100  // matches the fixed jet-array size written by ppjets_root.cc
+
+// Reference jet pT (GeV) for the pT-dependent EEC angular cutoffs: the E
+// column of the EEC terms CSV and --dR-min are the cutoffs at this pT, and
+// each bin uses  cut * kAngularCutRefPt / BinCenter  (see top-of-file note).
+static const double kAngularCutRefPt = 100.0;
 
 static void die(const std::string &msg) {
     std::cerr << "error: " << msg << std::endl;
@@ -235,11 +272,16 @@ static RadiusPlan plan_tree_inputs(TTree *t,
 // =====================================================================
 // Iterates every selected jet of `t`, assembles a JetData (constituents +
 // stored/reclustered subjets for the required radii), and invokes
-//   cb(const JetData& jd, double pt, double weight, int source)
-// exactly once per selected jet.  Handles both "array" trees (nJets + arrays,
-// e.g. tgenBefore from ppjets_root.cc) and "flat" one-jet-per-entry trees
-// (e.g. the toy tX/tY/tRef/tBiased trees).  This single helper replaces the
-// four near-identical read blocks the previous version carried.
+//   cb(const JetData& jd, double pt, double weight, int source,
+//      double jet_eta, double jet_phi, double jet_mass, bool has_jet_kin)
+// exactly once per selected jet.  jet_eta/jet_phi/jet_mass are forwarded
+// from the input tree's own "eta"/"phi"/"mass" branches when ALL THREE are
+// present (has_jet_kin == true); otherwise they are passed as 0.0 and
+// has_jet_kin is false, so callers never mistake an absent value for a
+// real one. Handles both "array" trees (nJets + arrays, e.g. tgenBefore
+// from ppjets_root.cc) and "flat" one-jet-per-entry trees (e.g. the toy
+// tX/tY/tRef/tBiased trees from startBasis.C).  This single helper
+// replaces the four near-identical read blocks an earlier version carried.
 template <class JetFn>
 static void read_tree_jets(TTree *t,
                            const std::string &n_branch,
@@ -256,6 +298,14 @@ static void read_tree_jets(TTree *t,
     const bool need_const  = plan.need_constituents;
     const bool use_fastjet_engine = (recluster_engine == "fastjet");
 
+    // Jet-level kinematics beyond pT -- see top-of-file "Jet-level
+    // eta/phi/mass passthrough" note. All-or-nothing: has_jet_kin is only
+    // true if every one of the three branches exists.
+    const bool has_eta  = (t->GetBranch("eta")  != nullptr);
+    const bool has_phi  = (t->GetBranch("phi")  != nullptr);
+    const bool has_mass = (t->GetBranch("mass") != nullptr);
+    const bool has_jet_kin = has_eta && has_phi && has_mass;
+
     // Scratch storage for reclustered subjet lists (kept alive across the cb
     // call; JetData holds pointers into it).
     std::map<int, std::vector<double>> recl;
@@ -264,6 +314,7 @@ static void read_tree_jets(TTree *t,
     // `get_precomp(rtag)` returns the precomputed subjet-pT list for this jet
     // (or nullptr if unavailable); constituent lists are passed explicitly.
     auto emit = [&](double jetpt, double weight, int source,
+                    double jeta, double jphi, double jmass,
                     const std::vector<double> *cpt,
                     const std::vector<double> *ceta,
                     const std::vector<double> *cphi,
@@ -293,7 +344,8 @@ static void read_tree_jets(TTree *t,
         if (!ok) return;
 
         if (req.constituents) build_constituent_pairs(jd, dR_min);
-        cb(static_cast<const JetData &>(jd), jetpt, weight, source);
+        cb(static_cast<const JetData &>(jd), jetpt, weight, source,
+           jeta, jphi, jmass, has_jet_kin);
     };
 
     const Long64_t ne = t->GetEntries();
@@ -301,6 +353,9 @@ static void read_tree_jets(TTree *t,
     if (array_style) {
         int   nJ = 0;
         float pt[MAXJ] = {0};
+        float jeta_a[MAXJ] = {0};
+        float jphi_a[MAXJ] = {0};
+        float jmass_a[MAXJ] = {0};
         float wt = 1.0f;
         int   src = -1;
         std::vector<std::vector<double>> *cp = nullptr, *ce = nullptr, *cf = nullptr;
@@ -310,6 +365,9 @@ static void read_tree_jets(TTree *t,
         t->SetBranchAddress(pt_branch.c_str(), pt);
         t->SetBranchAddress(wt_branch.c_str(), &wt);
         if (has_source) t->SetBranchAddress("source", &src);
+        if (has_eta)  t->SetBranchAddress("eta",  jeta_a);
+        if (has_phi)  t->SetBranchAddress("phi",  jphi_a);
+        if (has_mass) t->SetBranchAddress("mass", jmass_a);
         if (need_const) {
             t->SetBranchAddress("const_pt",  &cp);
             t->SetBranchAddress("const_eta", &ce);
@@ -336,7 +394,11 @@ static void read_tree_jets(TTree *t,
                         continue;
                     cpt = &cp->at(j); ceta = &ce->at(j); cphi = &cf->at(j);
                 }
-                emit(x, (double)wt, src, cpt, ceta, cphi,
+                emit(x, (double)wt, src,
+                     has_eta  ? (double)jeta_a[j]  : 0.0,
+                     has_phi  ? (double)jphi_a[j]  : 0.0,
+                     has_mass ? (double)jmass_a[j] : 0.0,
+                     cpt, ceta, cphi,
                      [&](int rtag) -> const std::vector<double> * {
                          auto it = sjb.find(rtag);
                          if (it == sjb.end() || !it->second ||
@@ -348,6 +410,7 @@ static void read_tree_jets(TTree *t,
         }
     } else {
         float pv = 0.0f;
+        float jeta_s = 0.0f, jphi_s = 0.0f, jmass_s = 0.0f;
         float wt = 1.0f;
         int   src = -1;
         std::vector<double> *cp = nullptr, *ce = nullptr, *cf = nullptr;
@@ -356,6 +419,9 @@ static void read_tree_jets(TTree *t,
         t->SetBranchAddress(pt_branch.c_str(), &pv);
         t->SetBranchAddress(wt_branch.c_str(), &wt);
         if (has_source) t->SetBranchAddress("source", &src);
+        if (has_eta)  t->SetBranchAddress("eta",  &jeta_s);
+        if (has_phi)  t->SetBranchAddress("phi",  &jphi_s);
+        if (has_mass) t->SetBranchAddress("mass", &jmass_s);
         if (need_const) {
             t->SetBranchAddress("const_pt",  &cp);
             t->SetBranchAddress("const_eta", &ce);
@@ -372,7 +438,11 @@ static void read_tree_jets(TTree *t,
             t->GetEntry(ev);
             const double x = pv;
             if (x < pt_min || x > pt_max) continue;
-            emit(x, (double)wt, src, cp, ce, cf,
+            emit(x, (double)wt, src,
+                 has_eta  ? (double)jeta_s  : 0.0,
+                 has_phi  ? (double)jphi_s  : 0.0,
+                 has_mass ? (double)jmass_s : 0.0,
+                 cp, ce, cf,
                  [&](int rtag) -> const std::vector<double> * {
                      auto it = sjb.find(rtag);
                      return (it == sjb.end()) ? nullptr : it->second;
@@ -509,14 +579,36 @@ int main(int argc, char *argv[]) {
     const double bin_center = read_bin_center(config_file);
     std::cout << "Bin-center config: '" << config_file << "'  BinCenter=" << bin_center
               << std::endl;
+    if (!(bin_center > 0.0))
+        die("Unbiasing.BinCenter in '" + config_file + "' must be positive "
+            "(it sets both the momentum norm and the angular-cutoff scaling)");
+
+    // ---- pT-dependent EEC angular-cutoff scale ----
+    // Both EEC angular cutoffs (the CSV's upper cut E and the --dR-min
+    // lower screen) are reference values at kAngularCutRefPt; this bin uses
+    // cut * kAngularCutRefPt / BinCenter. Always this bin's config-file
+    // BinCenter -- an --eec-norm override does NOT change this scale.
+    // Subjet radii are NOT scaled.
+    const double angular_cut_scale = kAngularCutRefPt / bin_center;
+    std::cout << "EEC angular-cutoff scale = " << kAngularCutRefPt << " / "
+              << bin_center << " = " << angular_cut_scale << std::endl;
 
     const std::vector<double> config_subjet_radii = read_subjet_radii(config_file);
     std::cout << "Config subjet radii:";
     for (double R : config_subjet_radii) std::cout << " " << R;
-    std::cout << std::endl;
+    std::cout << "  (not scaled)" << std::endl;
 
-    const std::vector<EECTermSpec> config_eec_terms = read_eec_terms_from_config(config_file);
+    // EEC term grid: read the reference E values from the CSV, then scale
+    // each term's upper cut E for this bin.
+    std::vector<EECTermSpec> config_eec_terms = read_eec_terms_from_config(config_file);
     std::cout << "Config EEC terms: " << config_eec_terms.size() << " term(s) read" << std::endl;
+    std::cout << "  E (reference, from CSV) -> E (used, x " << angular_cut_scale << "):" << std::endl;
+    for (EECTermSpec &t : config_eec_terms) {
+        const double E_ref = t.E;
+        t.E = E_ref * angular_cut_scale;
+        std::cout << "    A=" << t.A << " B=" << t.B << " m=" << t.m
+                  << "  E: " << E_ref << " -> " << t.E << std::endl;
+    }
 
     // ---- Basis configuration flags (VERSION 6) ----
     const std::string basis_eec_s  = get_arg(argc, argv, "--basis-eec",     "on");
@@ -530,7 +622,13 @@ int main(int argc, char *argv[]) {
 
     const double pt_min  = std::stod(get_arg(argc, argv, "--pt-min", "0.0"));
     const double pt_max  = std::stod(get_arg(argc, argv, "--pt-max", "1e9"));
-    const double dR_min  = std::stod(get_arg(argc, argv, "--dR-min", "0.001"));
+    // --dR-min is the REFERENCE small-angle screen (at kAngularCutRefPt);
+    // the value actually applied to the constituent pairs is scaled for
+    // this bin exactly like E above.
+    const double dR_min_ref = std::stod(get_arg(argc, argv, "--dR-min", "0.001"));
+    const double dR_min     = dR_min_ref * angular_cut_scale;
+    std::cout << "EEC dR_min: " << dR_min_ref << " (reference) -> " << dR_min
+              << " (used)" << std::endl;
     const double subjet_R = std::stod(get_arg(argc, argv, "--subjet-R", "0.1"));
     // --eec-norm / --subjet-norm default to the shared bin-center value read
     // above; pass either flag explicitly to override just that one family.
@@ -544,7 +642,7 @@ int main(int argc, char *argv[]) {
                                     ? std::stod(get_arg(argc, argv, "--subjet-norm"))
                                     : bin_center;
 
-    const int    max_iter        = std::stoi(get_arg(argc, argv, "--max-iter",       "20"));
+    const int    max_iter        = std::stoi(get_arg(argc, argv, "--max-iter",       "100000"));
     const double loss_tol        = std::stod(get_arg(argc, argv, "--loss-tol",       "1e-10"));
     const double tol             = std::stod(get_arg(argc, argv, "--tol",            "1e-6"));
     const double adam_beta1      = std::stod(get_arg(argc, argv, "--adam-beta1",     "0.9"));
@@ -580,9 +678,10 @@ int main(int argc, char *argv[]) {
     cfg.use_eec     = (basis_eec_s == "on" || basis_eec_s == "1" || basis_eec_s == "true");
     cfg.eec_norm    = eec_norm;
     cfg.subjet_norm = subjet_norm;
-    cfg.eec_dR_min  = dR_min;
+    cfg.eec_dR_min  = dR_min;   // already scaled for this bin
 
-    // EEC term grid: always this bin's config-file CSV (Unbiasing.EECTermsFile).
+    // EEC term grid: always this bin's config-file CSV (Unbiasing.EECTermsFile),
+    // with each E already scaled by angular_cut_scale above.
     // No CLI override -- edit that bin's CSV file instead.
     cfg.eec_terms = config_eec_terms;
 
@@ -631,7 +730,8 @@ int main(int argc, char *argv[]) {
     std::cout << "  [N] normalisation (analytic)" << std::endl;
     std::cout << "  signature = " << basis_signature(cfg) << std::endl;
     std::cout << "  EEC family: " << (cfg.use_eec ? "on" : "off")
-              << " (norm=" << cfg.eec_norm << ", dR_min=" << cfg.eec_dR_min << ")" << std::endl;
+              << " (norm=" << cfg.eec_norm << ", dR_min=" << cfg.eec_dR_min
+              << ", angular_cut_scale=" << angular_cut_scale << ")" << std::endl;
     std::cout << "  subjet-moment norm = " << cfg.subjet_norm
               << "  (bin_center=" << bin_center << ")" << std::endl;
     std::cout << "  --subjet-source = " << subjet_source << std::endl << std::endl;
@@ -653,7 +753,9 @@ int main(int argc, char *argv[]) {
         const RadiusPlan tplan = plan_tree_inputs(tt, req, subjet_source, "target");
         read_tree_jets(tt, n_branch, pt_branch, wt_branch, pt_min, pt_max,
                        req, tplan, dR_min, subjet_source,
-                       [&](const JetData &jd, double x, double w, int /*src*/) {
+                       [&](const JetData &jd, double x, double w, int /*src*/,
+                           double /*jeta*/, double /*jphi*/, double /*jmass*/,
+                           bool /*has_jet_kin*/) {
                            const std::vector<double> gv = evaluate_basis(basis, jd);
                            tgt_sumW += w; ++tgt_njets;
                            for (int b = 0; b < nphys; ++b) c[b] += w * gv[b];
@@ -676,6 +778,18 @@ int main(int argc, char *argv[]) {
     TTree *tree = dynamic_cast<TTree*>(in_file.Get(tree_name.c_str()));
     if (!tree) die("failed to find tree: " + tree_name);
 
+    // Jet-level eta/phi/mass passthrough for this source tree -- see
+    // top-of-file note. All-or-nothing.
+    const bool has_jet_kin_src = (tree->GetBranch("eta")  != nullptr &&
+                                  tree->GetBranch("phi")  != nullptr &&
+                                  tree->GetBranch("mass") != nullptr);
+    std::cout << "Source jet eta/phi/mass passthrough: "
+              << (has_jet_kin_src ? "available -> forwarding to 'tweights' output"
+                                  : "NOT available (eta/phi/mass branch missing) -- "
+                                    "plot_unbias_weights.cc's jet-mass and broadening "
+                                    "crosschecks will be skipped")
+              << std::endl;
+
     double wX_an = 0, wYp_an = 0; bool has_an = false;
     if (TTree *tW = dynamic_cast<TTree*>(in_file.Get("tWeights"))) {
         tW->SetBranchAddress("wX", &wX_an);
@@ -688,13 +802,15 @@ int main(int argc, char *argv[]) {
     std::vector<int> sources;
     std::vector<std::vector<double>> ocp, oce, ocf;  // constituents (for output, if read)
     std::vector<std::vector<double>> osj;            // primary-radius subjet pT's (for output)
+    std::vector<double> jet_eta, jet_phi, jet_mass;  // jet-level kinematics (for output, if read)
 
     pts.reserve((size_t)tree->GetEntries()*2); base_w.reserve((size_t)tree->GetEntries()*2);
 
     const RadiusPlan splan = plan_tree_inputs(tree, req, subjet_source, "source");
     read_tree_jets(tree, n_branch, pt_branch, wt_branch, pt_min, pt_max,
                    req, splan, dR_min, subjet_source,
-                   [&](const JetData &jd, double x, double w, int src) {
+                   [&](const JetData &jd, double x, double w, int src,
+                       double jeta, double jphi, double jmass, bool /*has_jet_kin*/) {
                        pts.push_back(x); base_w.push_back(w); sources.push_back(src);
                        gvals.push_back(evaluate_basis(basis, jd));
                        if (jd.const_pt && jd.const_eta && jd.const_phi) {
@@ -705,6 +821,11 @@ int main(int argc, char *argv[]) {
                        if (have_subjets) {
                            const std::vector<double> *sp = jd.subjets_at(primary_R);
                            if (sp) osj.push_back(*sp);
+                       }
+                       if (has_jet_kin_src) {
+                           jet_eta.push_back(jeta);
+                           jet_phi.push_back(jphi);
+                           jet_mass.push_back(jmass);
                        }
                    });
 
@@ -951,6 +1072,8 @@ int main(int argc, char *argv[]) {
     std::vector<double> xcp,xce,xcf,xsj,xg;
     bool sco = (ocp.size()==N);
     bool ssj = (osj.size()==N);
+    bool have_jet_kin = has_jet_kin_src && (jet_eta.size()==N) && (jet_phi.size()==N) && (jet_mass.size()==N);
+    float oeta=0.0f, ophi=0.0f, omass=0.0f;
     tw.Branch("pt",&op,"pt/F");
     tw.Branch("w_unbias",&wu,"w_unbias/D");
     tw.Branch("w_base",&wb,"w_base/D");
@@ -962,6 +1085,14 @@ int main(int argc, char *argv[]) {
     if (has_an) tw.Branch("w_analytic",&wa,"w_analytic/D");
     if (sco) { tw.Branch("const_pt",&xcp); tw.Branch("const_eta",&xce); tw.Branch("const_phi",&xcf); }
     if (ssj) tw.Branch("subjet_pt",&xsj);
+    // Jet-level eta/phi/mass passthrough (see top-of-file note) -- used by
+    // plot_unbias_weights.cc's jet-mass and broadening/angularity
+    // crosschecks. All-or-nothing: either all three are written, or none.
+    if (have_jet_kin) {
+        tw.Branch("eta",  &oeta,  "eta/F");
+        tw.Branch("phi",  &ophi,  "phi/F");
+        tw.Branch("mass", &omass, "mass/F");
+    }
 
     for (size_t i=0; i<N; ++i) {
         double dot=0;
@@ -973,6 +1104,7 @@ int main(int argc, char *argv[]) {
         if (has_an) wa = (os==0) ? wX_an : wYp_an;
         if (sco) { xcp=ocp[i]; xce=oce[i]; xcf=ocf[i]; }
         if (ssj) xsj=osj[i];
+        if (have_jet_kin) { oeta=(float)jet_eta[i]; ophi=(float)jet_phi[i]; omass=(float)jet_mass[i]; }
         xg = gvals[i];   // physical basis values for this source jet
         tw.Fill();
     }
@@ -1000,6 +1132,17 @@ int main(int argc, char *argv[]) {
     double bin_center_out = bin_center;
     tm.Branch("bin_center",&bin_center_out,"bin_center/D");
     tm.Branch("config_file",&config_file_label);
+    // Provenance for the pT-dependent EEC angular cutoffs: the scale factor
+    // (kAngularCutRefPt / BinCenter) and the reference/used dR_min. The
+    // scaled E values themselves appear in basis_labels ("[dR<E]").
+    double angular_cut_ref_pt_out = kAngularCutRefPt;
+    double angular_cut_scale_out  = angular_cut_scale;
+    double dR_min_ref_out         = dR_min_ref;
+    double dR_min_out             = dR_min;
+    tm.Branch("angular_cut_ref_pt",&angular_cut_ref_pt_out,"angular_cut_ref_pt/D");
+    tm.Branch("angular_cut_scale",&angular_cut_scale_out,"angular_cut_scale/D");
+    tm.Branch("dR_min_ref",&dR_min_ref_out,"dR_min_ref/D");
+    tm.Branch("dR_min",&dR_min_out,"dR_min/D");
     tm.Fill();
 
     // Companion tree: per-jet TARGET basis values + weight, so the plotter can

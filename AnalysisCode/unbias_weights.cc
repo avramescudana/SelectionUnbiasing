@@ -119,7 +119,7 @@
 //   --subjet-radii  "0.1,0.05"        subjet radii for the moment family (default: --config's Unbiasing.SubjetRadii)
 //   --subjet-powers "3,4,...,10"      powers n for the moment family
 //   --subjet-R    <R>                 single-radius shortcut (default 0.1)
-//   --subjet-source {auto,precomputed,recluster,fastjet}   how to obtain subjets
+//   --subjet-source {auto,precomputed,recluster,fastjet}   how to obtain subjets (default: fastjet)
 //   --dR-min      <val>               EEC small-angle screen, REFERENCE value
 //                                     (default 1e-3; scaled by 100/BinCenter)
 //
@@ -564,7 +564,7 @@ int main(int argc, char *argv[]) {
     const std::string run_mode     = get_arg(argc, argv, "--mode",          "run");
     const std::string scale_mode   = get_arg(argc, argv, "--scale-basis",   "target");
     const std::string lr_spec      = get_arg(argc, argv, "--adam-lr",       "auto");
-    const std::string subjet_source = get_arg(argc, argv, "--subjet-source", "precomputed");
+    const std::string subjet_source = get_arg(argc, argv, "--subjet-source", "fastjet");
 
     // ---- Shared per-bin config (written by startBasis.C) ----
     // This single TEnv file is the one place that defines the momentum scale
@@ -642,7 +642,7 @@ int main(int argc, char *argv[]) {
                                     ? std::stod(get_arg(argc, argv, "--subjet-norm"))
                                     : bin_center;
 
-    const int    max_iter        = std::stoi(get_arg(argc, argv, "--max-iter",       "100000"));
+    const int    max_iter        = std::stoi(get_arg(argc, argv, "--max-iter",       "20")); // likely need to make this higher
     const double loss_tol        = std::stod(get_arg(argc, argv, "--loss-tol",       "1e-10"));
     const double tol             = std::stod(get_arg(argc, argv, "--tol",            "1e-6"));
     const double adam_beta1      = std::stod(get_arg(argc, argv, "--adam-beta1",     "0.9"));

@@ -2,12 +2,9 @@
 // Hannah Bossi, <hannah.bossi@cern.ch>
 // December 18th, 2025
 //
-// Clusters anti-kT R=0.4 jets and, for each jet, reclusters its constituents
-// into Cambridge-Aachen subjets over a range of radii,
-// R = 0.01, 0.02, ..., 0.20 (0.01 to 0.20 in steps of 0.01).
-// The subjets found for each radius are stored in their own tree branches,
-// named by radius:  subjet_pt_R0p01 ... subjet_pt_R0p20  (0pXX == 0.XX),
-// and likewise for eta, phi, and nSubJets.
+// Clusters anti-kT R=0.4 jets and stores jet kinematics plus each jet's
+// constituents (pt, eta, phi). No subjets are stored: subjet reclustering is
+// done downstream in the unbiasing code (AnalysisCode/subjet_basis.h).
 //
 // --------------------- default preamble below -----------------------------
 // based off of main143.cc, which is one of the standard pythia example codes
@@ -36,7 +33,6 @@
 #include "TFile.h"
 
 // standard library
-#include <cstdio>   // for snprintf (branch-name construction)
 #include <iostream>
 #include <vector>
 
@@ -85,12 +81,6 @@ int main(int argc, char* argv[]) {
   TFile* outFile = new TFile("UnbiasingTest_PYTHIApp_pthatmin50_071125_1M.root", "RECREATE");
   TTree*    tree = new TTree("tgenBefore","Pythia8 event tree");
 
-  // ------------------ subjet radius scan configuration ----------------
-  // Recluster the jet constituents into Cambridge-Aachen subjets for each of
-  // these radii. rTag = 1..nRadii maps to R = rTag * dR = 0.01 .. 0.20.
-  const int    nRadii = 10;     // number of radii: 0.01, 0.02, ..., 0.20
-  const double dR     = 0.02;   // radius step (also the smallest radius)
-
   // ------------------ Define the tree ----------------
   // jet variables
   Int_t nJets; // to track the number of this part of the tree
@@ -103,14 +93,6 @@ int main(int argc, char* argv[]) {
   std::vector<std::vector<double>> const_pt;
   std::vector<std::vector<double>> const_eta;
   std::vector<std::vector<double>> const_phi;
-
-  // subjet variables - one set of "vector of vectors" (outer index = jet,
-  // inner index = subjet) PER radius in the scan.
-  std::vector<std::vector<double>> subjet_pt[nRadii];
-  std::vector<std::vector<double>> subjet_eta[nRadii];
-  std::vector<std::vector<double>> subjet_phi[nRadii];
-  // number of subjets found per jet, per radius
-  Int_t nSubJets[nRadii][MAXJETS];
 
   // event variables
   float weight;
@@ -132,33 +114,6 @@ int main(int argc, char* argv[]) {
   tree->Branch("const_eta", &const_eta);
   tree->Branch("const_phi", &const_phi);
 
-  // branch for subjet variables + C/A jet definitions, one per radius.
-  // Branch names encode the radius as R0pXX, where 0pXX == 0.XX
-  // (e.g. R0p01 -> R=0.01, R0p20 -> R=0.20).
-  std::vector<fastjet::JetDefinition> caDefs;
-  caDefs.reserve(nRadii);
-  for (int iR = 0; iR < nRadii; ++iR) {
-    const int    rTag = iR + 1;      // 1..nRadii
-    const double R    = rTag * dR;   // 0.01 .. 0.20
-    caDefs.emplace_back(fastjet::cambridge_algorithm, R, fastjet::E_scheme, fastjet::Best);
-
-    char bname[64];
-    char leaf[80];
-
-    snprintf(bname, sizeof(bname), "subjet_pt_R0p%02d", rTag);
-    tree->Branch(bname, &subjet_pt[iR]);
-
-    snprintf(bname, sizeof(bname), "subjet_eta_R0p%02d", rTag);
-    tree->Branch(bname, &subjet_eta[iR]);
-
-    snprintf(bname, sizeof(bname), "subjet_phi_R0p%02d", rTag);
-    tree->Branch(bname, &subjet_phi[iR]);
-
-    snprintf(bname, sizeof(bname), "nSubJets_R0p%02d", rTag);
-    snprintf(leaf,  sizeof(leaf),  "nSubJets_R0p%02d[nJets]/I", rTag);
-    tree->Branch(bname, nSubJets[iR], leaf);
-  }
-
   // branch for event
   tree->Branch("weight",&weight,"weight/F");
   // -----------------------------------------------------------
@@ -177,12 +132,6 @@ int main(int argc, char* argv[]) {
     const_pt.clear();
     const_eta.clear();
     const_phi.clear();
-
-    for (int iR = 0; iR < nRadii; ++iR) {
-      subjet_pt[iR].clear();
-      subjet_eta[iR].clear();
-      subjet_phi[iR].clear();
-    }
 
     // use a classic jet definition - antiKT jets - 0.4
     fastjet::JetDefinition antiKT = fastjet::JetDefinition( fastjet::antikt_algorithm, 0.4, fastjet::E_scheme, fastjet::Best);
@@ -235,27 +184,6 @@ int main(int argc, char* argv[]) {
           const_pt.emplace_back(jetConst_pt);
           const_eta.emplace_back(jetConst_eta);
           const_phi.emplace_back(jetConst_phi);
-
-          // recluster the constituents into C/A subjets, once per radius in the scan
-          for (int iR = 0; iR < nRadii; ++iR) {
-            fastjet::ClusterSequence cs2(constituents, caDefs[iR]);
-            std::vector<fastjet::PseudoJet> subjets = sorted_by_pt(cs2.inclusive_jets(0.0));
-            nSubJets[iR][index] = subjets.size();
-
-            std::vector<double> subjetConst_pt;
-            std::vector<double> subjetConst_eta;
-            std::vector<double> subjetConst_phi;
-
-            for (const auto &s : subjets) {
-              subjetConst_pt.push_back(s.pt());
-              subjetConst_eta.push_back(s.eta());
-              subjetConst_phi.push_back(s.phi());
-            }
-
-            subjet_pt[iR].emplace_back(subjetConst_pt);
-            subjet_eta[iR].emplace_back(subjetConst_eta);
-            subjet_phi[iR].emplace_back(subjetConst_phi);
-          } // end loop over subjet radii
 
           index++;
        } // end loop over the jets

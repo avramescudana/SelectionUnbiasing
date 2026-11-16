@@ -9,9 +9,9 @@
 # unlike before, ROOT flags alone are no longer enough):
 #   c++ -std=c++17 -O2 plot_unbias_weights.cc \
 #       $(root-config --cflags --libs) \
-#       $(/data/ALEPH/MC/mcgen/fastjet-install/bin/fastjet-config --cxxflags --libs) \
+#       $($FJI/bin/fastjet-config --cxxflags --libs) \
 #       -o plot_unbias_weights
-# or just `make plot_unbias_weights` (see Makefile). To also enable
+# or just `make plot_unbias_weights` (see makefile). To also enable
 # the N-subjettiness (tau1/tau2/tau3/tau21/tau32) crosscheck, which needs
 # fastjet-contrib's separate Nsubjettiness package, build with
 # NSUB_FLAGS="-DJET_OBS_HAVE_NSUBJETTINESS -I<fjcontrib include> -L<fjcontrib lib> -lNsubjettiness"
@@ -47,41 +47,50 @@
 # Edit SUBSTRUCTURE_BINNING below to change them for both bins at once.
 SUBSTRUCTURE_BINNING="--mass-bins 30 --rg-bins 13 --kt-bins 20 --broadening-bins 25 --tau-bins 25"
 
+# Run from this script's directory (AnalysisCode/), whatever the caller's cwd.
+cd "$(dirname "$0")" || exit 1
+# Generated files live in ../Output/ (git-ignored): ROOT files in files/, plots in plots/.
+FILES=../Output/files
+PLOTS=../Output/plots
+mkdir -p "$FILES" "$PLOTS"
+
 # ---- Bin 1: 100-140 GeV ----
 ./plot_unbias_weights \
-    --input unbias_weights_100_140.root \
-    --target-input startBasis_100_140.root \
+    --input $FILES/unbias_weights_100_140.root \
+    --target-input $FILES/startBasis_100_140.root \
     --target-tree tRef \
-    --config unbiasing_config_100_140.env \
+    --config $FILES/unbiasing_config_100_140.env \
     --pt-min 100 --pt-max 140 \
     --jet-R 0.4 --sd-zcut 0.1 --sd-beta 1.0 --nsub-beta 1.0 \
     ${SUBSTRUCTURE_BINNING} \
-    --out unbias_weights_plots_100_140.root
+    --plot-dir $PLOTS \
+    --out $FILES/unbias_weights_plots_100_140.root
 
 # ---- Bin 2: 140-180 GeV ----
 ./plot_unbias_weights \
-    --input unbias_weights_140_180.root \
-    --target-input startBasis_140_180.root \
+    --input $FILES/unbias_weights_140_180.root \
+    --target-input $FILES/startBasis_140_180.root \
     --target-tree tRef \
-    --config unbiasing_config_140_180.env \
+    --config $FILES/unbiasing_config_140_180.env \
     --pt-min 140 --pt-max 180 \
     --jet-R 0.4 --sd-zcut 0.1 --sd-beta 1.0 --nsub-beta 1.0 \
     ${SUBSTRUCTURE_BINNING} \
-    --out unbias_weights_plots_140_180.root
+    --plot-dir $PLOTS \
+    --out $FILES/unbias_weights_plots_140_180.root
 
 # Example paper-figure run instead (bigger text, PDF+PNG, a curated subset
 # of basis panels, and explicit jet-substructure crosscheck parameters) --
 # uncomment / adapt as needed, per bin:
 #
 # ./plot_unbias_weights \
-#     --input unbias_weights_100_140.root \
-#     --target-input startBasis_100_140.root \
+#     --input $FILES/unbias_weights_100_140.root \
+#     --target-input $FILES/startBasis_100_140.root \
 #     --target-tree tRef \
-#     --config unbiasing_config_100_140.env \
+#     --config $FILES/unbiasing_config_100_140.env \
 #     --pt-min 100 --pt-max 140 \
 #     --label-size 0.050 --title-size 0.058 --legend-size 0.044 \
 #     --line-width 3 --marker-size 1.3 \
-#     --formats pdf,png \
+#     --formats pdf,png --plot-dir $PLOTS \
 #     --basis-filter "sjmom_R0.10" --basis-ncol 3 --basis-nbins 25 \
 #     --jet-R 0.4 --sd-zcut 0.1 --sd-beta 1.0 --nsub-beta 1.0 \
 #     ${SUBSTRUCTURE_BINNING}

@@ -1,0 +1,41 @@
+# ---------- Pipeline outputs ----------
+# Everything the pipeline generates: Output/files/ (ROOT, config, CSV) and Output/plots/
+Output/
+*.root
+*.env
+*.env.bak
+# CSV files (e.g. per-bin EEC terms written by startBasis.C), except the
+# hand-written example grid, which must stay tracked
+*.csv
+!AnalysisCode/eec_terms_example.csv
+# plots written by startBasis.C / plot_unbias_weights
+jetPtShift_TChainReader_*.pdf
+plot_*.pdf
+*.png
+
+# ---------- Build products ----------
+AnalysisCode/unbias_weights
+AnalysisCode/plot_unbias_weights
+ppjets
+*.o
+*.so
+*.dylib
+*.dSYM/
+# ROOT / ACLiC
+*_C.d
+*_C.so
+*_C.pcm
+*_ACLiC_dict_rdict.pcm
+AutoDict_*
+
+# ---------- Python ----------
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+
+# ---------- OS / editors ----------
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*~

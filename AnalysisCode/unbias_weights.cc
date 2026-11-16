@@ -7,7 +7,7 @@
 // Builds:
 //   c++ -std=c++17 -O2 unbias_weights.cc \
 //       $(root-config --cflags --libs) \
-//       $(/data/ALEPH/MC/mcgen/fastjet-install/bin/fastjet-config --cxxflags --libs) \
+//       $($FJI/bin/fastjet-config --cxxflags --libs) \
 //       -o unbias_weights
 //
 // =====================================================================

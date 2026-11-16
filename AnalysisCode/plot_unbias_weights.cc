@@ -12,7 +12,7 @@
 // flags alone are no longer enough):
 //   c++ -std=c++17 -O2 plot_unbias_weights.cc \
 //       $(root-config --cflags --libs) \
-//       $(/data/ALEPH/MC/mcgen/fastjet-install/bin/fastjet-config --cxxflags --libs) \
+//       $($FJI/bin/fastjet-config --cxxflags --libs) \
 //       -o plot_unbias_weights
 //
 // To also enable the N-subjettiness crosscheck (tau_1/2/3, tau21, tau32),
@@ -20,13 +20,13 @@
 // base FastJet), add -DJET_OBS_HAVE_NSUBJETTINESS and link it, e.g.:
 //   c++ -std=c++17 -O2 plot_unbias_weights.cc \
 //       $(root-config --cflags --libs) \
-//       $(/data/ALEPH/MC/mcgen/fastjet-install/bin/fastjet-config --cxxflags --libs) \
+//       $($FJI/bin/fastjet-config --cxxflags --libs) \
 //       -DJET_OBS_HAVE_NSUBJETTINESS \
 //       -I/path/to/fjcontrib-install/include -L/path/to/fjcontrib-install/lib -lNsubjettiness \
 //       -o plot_unbias_weights
 // Without that define, the tau1/tau2/tau3/tau21/tau32 histograms and plots
 // are simply skipped (one note printed to stdout), everything else is
-// unaffected. See Makefile for a build target with this wired up via
+// unaffected. See makefile for a build target with this wired up via
 // an (empty-by-default) NSUB_FLAGS make variable.
 //
 // Example (defaults):
@@ -40,7 +40,7 @@
 //     --input unbias_weights.root --target-input startBasis_output.root \
 //     --label-size 0.050 --title-size 0.055 --legend-size 0.042 \
 //     --line-width 3 --marker-size 1.2 \
-//     --formats pdf,png \
+//     --formats pdf,png --plot-dir ../Output/plots \
 //     --basis-filter sjmom_R0.10 --basis-ncol 3 --basis-nbins 25
 //
 // =====================================================================
@@ -150,6 +150,7 @@
 #include <TMath.h>
 #include <TLine.h>
 #include <TAxis.h>
+#include <TSystem.h>
 
 #include "basis_functions.h"   // read_bin_center() (shared TEnv config helper)
 #include "jet_observables.h"   // soft_drop() / nsubjettiness() / broadening() -- substructure crosschecks
@@ -252,6 +253,7 @@ struct PlotConfig {
   double margin_bottom = 0.14;
   int    font          = 42;    // ROOT font code (42 = Helvetica, precision 2)
   std::vector<std::string> formats = { "pdf" };
+  std::string plot_dir = ".";   // directory the plot files are saved in (--plot-dir; created if missing)
 };
 
 static PlotConfig parse_plot_config(int argc, char* argv[]) {
@@ -268,6 +270,9 @@ static PlotConfig parse_plot_config(int argc, char* argv[]) {
   cfg.font        = std::stoi(get_arg(argc, argv, "--font", "42"));
   cfg.formats     = parse_string_list(get_arg(argc, argv, "--formats", "pdf"));
   if (cfg.formats.empty()) cfg.formats = { "pdf" };
+  cfg.plot_dir    = get_arg(argc, argv, "--plot-dir", ".");
+  if (cfg.plot_dir.empty()) cfg.plot_dir = ".";
+  gSystem->mkdir(cfg.plot_dir.c_str(), kTRUE);
   return cfg;
 }
 
@@ -420,10 +425,10 @@ static void draw_unity_line(TH1D *ref_axis_hist) {
 }
 
 // Save a canvas in every configured format, e.g. {"pdf","png"} ->
-// base_name.pdf, base_name.png.
+// <plot_dir>/base_name.pdf, <plot_dir>/base_name.png.
 static void save_canvas(TCanvas *c, const std::string &base_name, const PlotConfig &cfg) {
   for (const std::string &fmt : cfg.formats)
-    c->SaveAs((base_name + "." + fmt).c_str());
+    c->SaveAs((cfg.plot_dir + "/" + base_name + "." + fmt).c_str());
 }
 
 // =====================================================================
@@ -1244,7 +1249,7 @@ int main(int argc, char* argv[]) {
     inb.Close();
   }
 
-  std::cout << "wrote " << out_name << " and plot_unbias_pT_check_" << pt_suffix << " / "
+  std::cout << "wrote " << out_name << " and (in " << cfg.plot_dir << "/) plot_unbias_pT_check_" << pt_suffix << " / "
             << "plot_unbias_weights_weights_" << pt_suffix << " / plot_eec_compare_" << pt_suffix << " / "
             << "plot_jet_mass_" << pt_suffix << " / plot_rg_" << pt_suffix << " / plot_kt_" << pt_suffix
             << " / plot_broadening_" << pt_suffix

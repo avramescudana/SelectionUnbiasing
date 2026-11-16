@@ -25,10 +25,15 @@
 // midpoint defaults below: bin 100-140 (center 120) -> scale 0.8333,
 // bin 140-180 (center 160) -> scale 0.625.
 //
-// Usage:
+// Usage (run from the AnalysisCode/ directory -- all paths are relative to it):
+//   root -l -b -q 'driveBins.C("/path/to/MCOutput/")'
+// or set the input directory once via the environment:
+//   export UNBIAS_INPUT_DIR=/path/to/MCOutput/
 //   root -l -b -q driveBins.C
+// The input directory is scanned recursively for the ROOT files holding the
+// jet tree (every .root file in it is read).
 //
-// Produces, per bin:
+// Produces, per bin (in ../Output/files/, plots in ../Output/plots/):
 //   startBasis_<bin>.root                    -- biased/reference trees
 //   unbiasing_config_<bin>.env                -- BinCenter/PtLow/PtHigh/
 //                                                 SubjetRadii/EECTermsFile
@@ -45,8 +50,19 @@
 // undeclared identifier even though the load would happen fine at runtime.
 #include "startBasis.C"
 
-void driveBins() {
-  const char* inputDir = "/home/hbossi/SelectionUnbiasing/MCOutput/v3/";
+void driveBins(const char* inputDirArg = "") {
+  // Input directory: macro argument, else $UNBIAS_INPUT_DIR, else abort
+  // (a wrong/empty directory would otherwise just give 0 entries).
+  const char* envDir = gSystem->Getenv("UNBIAS_INPUT_DIR");
+  const char* inputDir = (inputDirArg && inputDirArg[0]) ? inputDirArg
+                         : (envDir && envDir[0])         ? envDir
+                         : "";
+  if (!inputDir[0]) {
+    std::cerr << "driveBins: no input directory. Pass it as an argument, e.g.\n"
+              << "  root -l -b -q 'driveBins.C(\"/path/to/MCOutput/\")'\n"
+              << "or set UNBIAS_INPUT_DIR." << std::endl;
+    return;
+  }
   const double p = 8.0;
   const double d = 0.1;
   const unsigned rngSeed = 12345;
@@ -54,23 +70,32 @@ void driveBins() {
   const char* subjetRadii = "0.10,0.20";              // same subjet radii for both bins, for now
   const char* eecTermsFile = "eec_terms_example.csv"; // shared EEC term grid for both bins, for now
 
+  // Generated files go under ../Output/ (next to AnalysisCode/, git-ignored):
+  // ROOT/config files in Output/files/, plots in Output/plots/.
+  const TString filesDir = "../Output/files";
+  const TString plotsDir = "../Output/plots";
+  gSystem->mkdir(filesDir, kTRUE);
+  gSystem->mkdir(plotsDir, kTRUE);
+
   // ---- Bin 1: 100-140 GeV ----
   startBasis(inputDir,
-             "startBasis_100_140.root",
+             filesDir + "/startBasis_100_140.root",
              100, 140,
              p, d, rngSeed,
              binCenter,
-             "unbiasing_config_100_140.env",
+             filesDir + "/unbiasing_config_100_140.env",
              subjetRadii,
-             eecTermsFile);
+             eecTermsFile,
+             plotsDir);
 
   // ---- Bin 2: 140-180 GeV ----
   startBasis(inputDir,
-             "startBasis_140_180.root",
+             filesDir + "/startBasis_140_180.root",
              140, 180,
              p, d, rngSeed,
              binCenter,
-             "unbiasing_config_140_180.env",
+             filesDir + "/unbiasing_config_140_180.env",
              subjetRadii,
-             eecTermsFile);
+             eecTermsFile,
+             plotsDir);
 }

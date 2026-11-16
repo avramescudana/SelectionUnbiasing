@@ -26,6 +26,7 @@
 #include <TString.h>
 #include <TEnv.h>
 
+#include <TSystem.h>
 #include <TSystemDirectory.h>
 #include <TSystemFile.h>
 #include <TList.h>
@@ -75,7 +76,7 @@ void FillChain(TChain &chain, vector<string> &files) {
 // ----------------------------------------------------
 
 // main function
-void startBasis(const char* inputDir = "/home/hbossi/SelectionUnbiasing/MCOutput/v3/",
+void startBasis(const char* inputDir = "/path/to/MCOutput/",  // no sensible default: always pass your own
                 const char* outFile  = "startBasis_output.root",
                 double pTLow = 100,
                 double pTHigh = 140,
@@ -101,7 +102,11 @@ void startBasis(const char* inputDir = "/home/hbossi/SelectionUnbiasing/MCOutput
                 // empty to auto-generate one next to configFile from the
                 // compiled default_eec_terms() grid, which you can then
                 // hand-edit for this bin.
-                const char* eecTermsFile = "") {
+                const char* eecTermsFile = "",
+                // Directory for the plots this macro saves (created if
+                // missing). Output ROOT/config files go wherever outFile /
+                // configFile point.
+                const char* plotDir = ".") {
 
   // config
   const char* treeName = "tgenBefore";
@@ -162,6 +167,12 @@ void startBasis(const char* inputDir = "/home/hbossi/SelectionUnbiasing/MCOutput
 
   cout << "Total entries in chain: "
        << chain.GetEntries() << endl;
+  if (chain.GetEntries() == 0) {
+    std::cerr << "startBasis: no entries found in tree '" << treeName
+              << "' under input directory '" << inputDir
+              << "' -- check the path (it must contain the .root files)." << std::endl;
+    return;
+  }
 
   // -----------------------------
   // TTreeReader setup
@@ -452,7 +463,8 @@ void startBasis(const char* inputDir = "/home/hbossi/SelectionUnbiasing/MCOutput
   leg->SetBorderSize(0);
   leg->Draw();
 
-  c->SaveAs(Form("jetPtShift_TChainReader_%s.pdf", "072226"));
+  gSystem->mkdir(plotDir, kTRUE);
+  c->SaveAs(Form("%s/jetPtShift_TChainReader_%s.pdf", plotDir, "072226"));
 
   // Save histograms and trees for downstream unbiasing.
   hPtX->Write();

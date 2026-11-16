@@ -1,10 +1,28 @@
 CXX      := c++
 CXXSTD   := -std=c++17 -O2
 
-FASTJET_CONFIG := /data/ALEPH/MC/mcgen/fastjet-install/bin/fastjet-config
+# Locating fastjet-config (first match wins):
+#   1. make FASTJET_CONFIG=/path/to/fastjet-install/bin/fastjet-config
+#   2. $FJI (the FastJet install prefix): $FJI/bin/fastjet-config
+#   3. fastjet-config on PATH
+FASTJET_CONFIG ?= $(if $(FJI),$(FJI)/bin/fastjet-config,$(shell which fastjet-config 2>/dev/null))
+ifeq ($(strip $(FASTJET_CONFIG)),)
+$(error fastjet-config not found: set FJI=/path/to/fastjet-install, put fastjet-config on PATH, or pass FASTJET_CONFIG=...)
+endif
 
 ROOT_FLAGS    := $(shell root-config --cflags --libs)
-FASTJET_FLAGS := $(shell $(FASTJET_CONFIG) --cxxflags --libs)
+# The rpath bakes FastJet's lib dir into the binary, so no LD_LIBRARY_PATH /
+# DYLD_LIBRARY_PATH is needed at run time and a different FastJet version
+# (e.g. one shipped inside a conda env) cannot be picked up by mistake.
+# NOTE: FASTJET_FLAGS must come BEFORE ROOT_FLAGS on the compile lines below, so that
+# our FastJet headers, -L and rpath win over a (different) FastJet inside the ROOT/conda env.
+# Some fastjet-config builds already emit this rpath in --libs; add it only if missing
+# (avoids a "duplicate -rpath" linker warning).
+FASTJET_LIBDIR := $(shell $(FASTJET_CONFIG) --prefix)/lib
+FASTJET_FLAGS  := $(shell $(FASTJET_CONFIG) --cxxflags --libs)
+ifeq ($(findstring -rpath,$(FASTJET_FLAGS)),)
+FASTJET_FLAGS  += -Wl,-rpath,$(FASTJET_LIBDIR)
+endif
 
 # Optional fastjet-contrib Nsubjettiness support for
 # plot_unbias_weights.cc's tau1/tau2/tau3/tau21/tau32 crosscheck plots.
@@ -21,12 +39,12 @@ NSUB_FLAGS ?=
 all: unbias_weights plot_unbias_weights
 
 unbias_weights: unbias_weights.cc subjet_basis.h basis_functions.h
-	$(CXX) $(CXXSTD) unbias_weights.cc $(ROOT_FLAGS) $(FASTJET_FLAGS) -o unbias_weights
+	$(CXX) $(CXXSTD) unbias_weights.cc $(FASTJET_FLAGS) $(ROOT_FLAGS) -o unbias_weights
 
 # plot_unbias_weights.cc now also requires FastJet (jet_observables.h's
 # Soft Drop groomer uses fastjet::ClusterSequence), unlike before.
 plot_unbias_weights: plot_unbias_weights.cc basis_functions.h jet_observables.h
-	$(CXX) $(CXXSTD) plot_unbias_weights.cc $(ROOT_FLAGS) $(FASTJET_FLAGS) $(NSUB_FLAGS) -o plot_unbias_weights
+	$(CXX) $(CXXSTD) plot_unbias_weights.cc $(FASTJET_FLAGS) $(ROOT_FLAGS) $(NSUB_FLAGS) -o plot_unbias_weights
 
 clean:
 	rm -f unbias_weights plot_unbias_weights

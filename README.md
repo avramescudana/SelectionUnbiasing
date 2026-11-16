@@ -156,8 +156,9 @@ FastJet too — unlike before, ROOT flags alone are no longer enough (see
   install from base FastJet) if you want `plot_unbias_weights.cc`'s
   tau1/tau2/tau3/tau21/tau32 crosscheck plots — build with
   `-DJET_OBS_HAVE_NSUBJETTINESS` and link `-lNsubjettiness` (see
-  `Makefile`'s `NSUB_FLAGS`). Without it, those five plots are
+  `makefile`'s `NSUB_FLAGS`). Without it, those five plots are
   simply skipped.
+- PYTHIA 8 (only to generate test input, see `SETUP.md`).
 - A dataset of ROOT files with a tree like `tgenBefore` containing:
   - `nJets` (optional, for array-style trees)
   - `pt`, `eta`, `phi`, `mass`, `weight`
@@ -166,30 +167,58 @@ FastJet too — unlike before, ROOT flags alone are no longer enough (see
 
 ## Quick Start
 
+See `SETUP.md` for installing the dependencies on a new machine. Set up the
+environment once per shell, and run **everything from `AnalysisCode/`**
+(file paths in the macros, config files and scripts are relative to it):
+
+```bash
+conda activate unbias                      # if ROOT comes from a conda env (or: conda activate /path/to/env)
+export FJI=/path/to/fastjet-install        # FastJet install prefix (contains bin/fastjet-config)
+export UNBIAS_INPUT_DIR=/path/to/MCOutput/ # directory with the input ROOT files
+cd AnalysisCode
+```
+
+In a script or other non-interactive shell where `conda activate` doesn't
+work, use `export PATH=/path/to/conda-env/bin:$PATH` instead; that is enough
+to build and run the analysis.
+
+All generated files go into `Output/` at the top of the repository (next to
+`AnalysisCode/`, created automatically and git-ignored): ROOT, config and CSV
+files in `Output/files/`, plots in `Output/plots/`. From `AnalysisCode/` these
+are `../Output/files/` and `../Output/plots/`, as used in the commands below.
+
 ### 1) Build the toy biased/unbiased samples, per pT bin
-`AnalysisCode/driveBins.C` drives `startBasis.C` once per pT bin,
+`driveBins.C` drives `startBasis.C` once per pT bin,
 each writing its own output ROOT file and its own config file (and, unless
 pointed at an existing CSV, its own default EEC terms file). The checked-in
 example sets up two bins (100–140 GeV and 140–180 GeV) sharing the same
 subjet radii and the same example EEC term grid
-(`AnalysisCode/eec_terms_example.csv`, which reproduces the original
+(`eec_terms_example.csv`, which reproduces the original
 compiled default grid exactly):
 
 ```bash
-root -l -b -q AnalysisCode/driveBins.C
+root -l -b -q driveBins.C
 ```
 
-Edit `driveBins.C` to change the pT windows, input directory, bias
+The input directory is taken from `$UNBIAS_INPUT_DIR`, or pass it directly:
+`root -l -b -q 'driveBins.C("/path/to/MCOutput/")'`. Every `.root` file in
+that directory is read, so keep unrelated ROOT files out of it. If the
+directory is wrong or empty, the macro stops with an error (0 entries).
+
+Edit `driveBins.C` to change the pT windows, bias
 parameters, or to point a bin at its own subjet radii / EEC terms file once
 you want the bins to diverge.
 
-To build a single bin by hand instead:
+To build a single bin by hand instead (use your real input directory; a
+wrong one gives 0 entries):
 
 ```bash
-root -l -q 'AnalysisCode/startBasis.C("/path/to/MCOutput/", "startBasis_output.root", 100, 140, 8.0, 0.1, 12345, -1.0, "unbiasing_config.env", "0.10,0.20", "")'
+root -l -q 'startBasis.C("/path/to/MCOutput/", "../Output/files/startBasis_output.root", 100, 140, 8.0, 0.1, 12345, -1.0, "../Output/files/unbiasing_config.env", "0.10,0.20", "", "../Output/plots")'
 ```
 
-Outputs, per bin:
+(the last argument is the plot directory, default `.`).
+
+Outputs, per bin (in `Output/files/`, the plot in `Output/plots/`):
 - `startBasis_<bin>.root` with trees:
   - `tX`: unbiased X jets
   - `tY`: Y jets
@@ -209,31 +238,42 @@ Outputs, per bin:
 - `jetPtShift_TChainReader_<date>.pdf`
 
 ### 2) Compute unbiasing weights, per pT bin
-Build (now requires linking against FastJet):
+Build (requires linking against FastJet). The simplest way is `make`, which
+finds `fastjet-config` via `$FJI` (or `PATH`, or `make FASTJET_CONFIG=...`)
+and builds both `unbias_weights` and `plot_unbias_weights`:
 
 ```bash
-c++ -std=c++17 -O2 AnalysisCode/unbias_weights.cc \
+make
+```
+
+or by hand (FastJet flags first, so they win over any other FastJet, e.g.
+one inside a conda env):
+
+```bash
+c++ -std=c++17 -O2 unbias_weights.cc \
+    $($FJI/bin/fastjet-config --cxxflags --libs) \
+    -Wl,-rpath,$FJI/lib \
     $(root-config --cflags --libs) \
-    $(/path/to/fastjet-install/bin/fastjet-config --cxxflags --libs) \
     -o unbias_weights
 ```
 
-or use `AnalysisCode/Makefile` / `AnalysisCode/runUnbiasing.sh`, which also
-runs the binary once per pT bin. If FastJet was installed to a non-system
-prefix, point `LD_LIBRARY_PATH` at its `lib/` directory before running:
+`runUnbiasing.sh` runs the binary once per pT bin. The `-Wl,-rpath` flag
+(included in the `makefile`) bakes FastJet's `lib/` directory into the binary.
+Without it, a FastJet install at a non-system prefix must be found through
+`LD_LIBRARY_PATH` (`DYLD_LIBRARY_PATH` on macOS; `LD_LIBRARY_PATH` is ignored
+there). Note that a second FastJet (e.g. inside a conda env) can then be
+loaded by mistake, which segfaults on a version mismatch, hence the rpath.
 
 ```bash
-export LD_LIBRARY_PATH=/path/to/fastjet-install/lib:$LD_LIBRARY_PATH
-
 ./unbias_weights \
-  --input startBasis_100_140.root \
+  --input ../Output/files/startBasis_100_140.root \
   --tree tBiased \
-  --target-input startBasis_100_140.root \
+  --target-input ../Output/files/startBasis_100_140.root \
   --target-tree tRef \
-  --config unbiasing_config_100_140.env \
+  --config ../Output/files/unbiasing_config_100_140.env \
   --pt-min 100 --pt-max 140 \
   --subjet-source fastjet \
-  --out unbias_weights_100_140.root \
+  --out ../Output/files/unbias_weights_100_140.root \
   --mode run
 ```
 
@@ -242,29 +282,33 @@ must point at that bin's config file — it is what supplies the bin center,
 subjet radii, and EEC term grid (see "Per-bin configuration" above); there
 is no built-in fallback if it's missing.
 
-Outputs:
+Outputs (in `Output/files/`):
 - `unbias_weights_<bin>.root` with tree `tweights` containing `w_unbias`, `w_base`,
   `w_total`, and `g_basis`; plus `meta` and `tbasis_target`. `tweights` also
   carries `eta`/`phi`/`mass` branches when the source tree had them (see
   "Jet-substructure crosschecks" above) -- all-or-nothing, source jets only.
 
 ### 3) Validate with plots, per pT bin
-Build and run (or use `AnalysisCode/runPlotUnbiasedWeights.sh`):
+Build (already done by `make` above) and run (or use `runPlotUnbiasedWeights.sh`):
 
 ```bash
-c++ -std=c++17 -O2 AnalysisCode/plot_unbias_weights.cc \
+c++ -std=c++17 -O2 plot_unbias_weights.cc \
+    $($FJI/bin/fastjet-config --cxxflags --libs) \
+    -Wl,-rpath,$FJI/lib \
     $(root-config --cflags --libs) \
-    $(/path/to/fastjet-install/bin/fastjet-config --cxxflags --libs) \
     -o plot_unbias_weights
 
 ./plot_unbias_weights \
-  --input unbias_weights_100_140.root \
-  --target-input startBasis_100_140.root \
+  --input ../Output/files/unbias_weights_100_140.root \
+  --target-input ../Output/files/startBasis_100_140.root \
   --target-tree tRef \
-  --config unbiasing_config_100_140.env \
+  --config ../Output/files/unbiasing_config_100_140.env \
   --pt-min 100 --pt-max 140 \
-  --out unbias_weights_plots_100_140.root
+  --plot-dir ../Output/plots \
+  --out ../Output/files/unbias_weights_plots_100_140.root
 ```
+
+`--plot-dir` sets where the plot files are saved (created if missing; default `.`).
 
 (`plot_unbias_weights.cc` doesn't recluster subjets -- it only reads
 already-computed subjet-moment output -- but it DOES now need FastJet for
@@ -273,7 +317,8 @@ unlike before it needs the FastJet link too.)
 
 Outputs, every plot labeled on-canvas and in the file name with its pT bin
 (e.g. "100 < p_T < 140 GeV", `_100_140` suffix), derived from `--pt-min`/
-`--pt-max` so the label can never drift from the window actually plotted:
+`--pt-max` so the label can never drift from the window actually plotted
+(plots in `Output/plots/`, the ROOT file given by `--out` in `Output/files/`):
 - `plot_unbias_pT_check_<bin>.pdf`
 - `plot_unbias_weights_weights_<bin>.pdf`
 - `plot_eec_compare_<bin>.pdf`
@@ -299,7 +344,7 @@ Outputs, every plot labeled on-canvas and in the file name with its pT bin
 - `AnalysisCode/plot_loss_from_nohup.py`: plot loss vs iteration from logs
 - `AnalysisCode/runUnbiasing.sh`: example unbiasing command, run once per pT bin
 - `AnalysisCode/runPlotUnbiasedWeights.sh`: example plotting command, run once per pT bin
-- `AnalysisCode/Makefile`: build targets for `unbias_weights` and `plot_unbias_weights` (ROOT + FastJet, optional `NSUB_FLAGS` for Nsubjettiness)
+- `AnalysisCode/makefile`: build targets for `unbias_weights` and `plot_unbias_weights` (ROOT + FastJet, optional `NSUB_FLAGS` for Nsubjettiness)
 - `AnalysisCode/todo.md`: running to-do list for this analysis chain
 
 ## Notes

@@ -4,14 +4,17 @@ Everything below runs from `AnalysisCode/` unless stated otherwise.
 
 ## 1. Dependencies
 
-ROOT 6, FastJet 3 (with `fastjet-config`), a C++17 compiler, and PYTHIA 8 (only to generate test input).
+ROOT 6, FastJet 3 (with `fastjet-config`), a C++17 compiler, PYTHIA 8 (only to generate test input),
+and for the Python notebooks `numpy`, `matplotlib`, `uproot` and `ipykernel`.
 
 Example with conda (macOS or Linux):
 
 ```bash
 conda create -n unbias -c conda-forge --strict-channel-priority \
-    root fastjet compilers python=3.12 matplotlib numpy pythia8
+    root fastjet compilers python=3.12 matplotlib numpy uproot ipykernel pythia8
 ```
+
+To add the notebook packages to an existing env: `conda install -n unbias -c conda-forge uproot ipykernel`.
 
 The conda FastJet package may not ship `fastjet-config`. If so, build FastJet from source:
 
@@ -84,3 +87,18 @@ export PYTHIA8DATA=$CONDA_PREFIX/share/Pythia8/xmldoc
 ```
 
 Then move the output `.root` file into its own directory and point `UNBIAS_INPUT_DIR` at it.
+
+## Notebooks (Jupyter / VS Code)
+
+The notebooks (e.g. `AnalysisCode/plot_pt_bias.ipynb`) run in the conda env. Register it once as a
+Jupyter kernel:
+
+```bash
+conda activate unbias      # or: conda activate /path/to/unbias
+python -m ipykernel install --user --name unbias --display-name "Python (unbias)"
+```
+
+In VS Code (with the Python and Jupyter extensions): open the notebook, click **Select Kernel**
+(top right) → **Jupyter Kernel…** → **Python (unbias)**. In Jupyter Lab/Notebook, pick
+**Python (unbias)** from the kernel menu. The notebooks read from `../Output/files/`, so run the
+corresponding chain first (`driveBins.C` / `driveBinsLognormal.C`).

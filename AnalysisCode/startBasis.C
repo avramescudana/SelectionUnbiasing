@@ -74,6 +74,25 @@ void FillChain(TChain &chain, vector<string> &files) {
 }
 
 // ----------------------------------------------------
+// Log-normal X keep probability (biasType = 1, see BIAS.md):
+//   D(pT) = exp[-(ln pT - mu)^2 / (2 sigma^2)] / (sqrt(2 pi) sigma pT),
+// divided by its maximum (at the mode pT* = exp(mu - sigma^2)) so that it is
+// a probability in [0,1], then multiplied by an overall amplitude `norm`:
+//   w(pT) = norm * D(pT) / D(pT*),   0 < norm <= 1.
+// norm = 1: w = 1 at the mode, the strongest bias this shape can give.
+// norm < 1: same shape, scaled down, so fewer X jets are dropped (weaker
+//   bias). The biased/unbiased ratio is (w + 2 - k)/2 with k = <w>_X, so its
+//   deviation from 1 scales with norm.
+// Capped at 1 so it is always a valid probability.
+// pt in GeV; mu, sigma are the mean and width of ln(pT/GeV).
+inline double lognormalBiasWeight(double pt, double mu, double sigma, double norm = 1.0) {
+  if (pt <= 0.0 || sigma <= 0.0 || norm <= 0.0) return 0.0;
+  const double lx = std::log(pt) - mu;
+  const double w = norm * std::exp(-lx * lx / (2.0 * sigma * sigma) - std::log(pt) + mu - 0.5 * sigma * sigma);
+  return (w > 1.0) ? 1.0 : w;
+}
+
+// ----------------------------------------------------
 
 // main function
 void startBasis(const char* inputDir = "/path/to/MCOutput/",  // no sensible default: always pass your own
@@ -106,7 +125,18 @@ void startBasis(const char* inputDir = "/path/to/MCOutput/",  // no sensible def
                 // Directory for the plots this macro saves (created if
                 // missing). Output ROOT/config files go wherever outFile /
                 // configFile point.
-                const char* plotDir = ".") {
+                const char* plotDir = ".",
+                // X-jet bias shape (see BIAS.md):
+                //   biasType = 0: power law in pT with parameters p, d (default);
+                //   biasType = 1: log-normal in pT with lnMu, lnSigma, lnNorm
+                //                 (p and d are then ignored).
+                int biasType = 0,
+                double lnMu = 4.733,     // mean of ln(pT/GeV)
+                double lnSigma = 0.12,   // width of ln(pT/GeV)
+                // Amplitude of the log-normal keep probability (its maximum
+                // value), in (0,1]. 1 = strongest bias for this shape;
+                // smaller values give a weaker bias with the same shape.
+                double lnNorm = 1.0) {
 
   // config
   const char* treeName = "tgenBefore";
@@ -343,11 +373,13 @@ void startBasis(const char* inputDir = "/path/to/MCOutput/",  // no sensible def
         tPP->Fill();
 
         // Downsample X with probability = biasWeight
+        // (log-normal if biasType == 1, else the original power law).
         const double ptL_p   = std::pow(pTLow, p);
         const double ptH_p   = std::pow(pTHigh, p);
         const double ptRaw_p = std::pow(ptRaw, p);
-        const double biasWeight =
-            (ptL_p - ptH_p * d + (-1.0 + d) * ptRaw_p) / (ptL_p - ptH_p);
+        const double biasWeight = (biasType == 1)
+            ? lognormalBiasWeight(ptRaw, lnMu, lnSigma, lnNorm)
+            : (ptL_p - ptH_p * d + (-1.0 + d) * ptRaw_p) / (ptL_p - ptH_p);
         if (uni01(rng) < biasWeight) tBiased->Fill();
 
         // ---- Y jet ----
@@ -464,7 +496,9 @@ void startBasis(const char* inputDir = "/path/to/MCOutput/",  // no sensible def
   leg->Draw();
 
   gSystem->mkdir(plotDir, kTRUE);
-  c->SaveAs(Form("%s/jetPtShift_TChainReader_%s.pdf", plotDir, "072226"));
+  // "_lognormal" suffix so a log-normal run does not overwrite the power-law plot.
+  c->SaveAs(Form("%s/jetPtShift_TChainReader_%s%s.pdf", plotDir, "072226",
+                 (biasType == 1) ? "_lognormal" : ""));
 
   // Save histograms and trees for downstream unbiasing.
   hPtX->Write();

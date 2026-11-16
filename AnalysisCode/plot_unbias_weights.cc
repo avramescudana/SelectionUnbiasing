@@ -527,7 +527,11 @@ int main(int argc, char* argv[]) {
   // pT-bin suffix/label, derived from --pt-min/--pt-max (see top-of-file
   // docs): used below both for the default --out ROOT file name and for
   // every saved plot's file name and on-canvas label.
-  const std::string pt_suffix = pt_bin_suffix(pt_min, pt_max);
+  // Optional --tag <name> (e.g. "lognormal") names the bias type; it is
+  // appended to the suffix, so every saved plot and the default --out file
+  // carry it (e.g. plot_eec_compare_100_140_lognormal.pdf).
+  const std::string bias_tag  = get_arg(argc, argv, "--tag", "");
+  const std::string pt_suffix = pt_bin_suffix(pt_min, pt_max) + (bias_tag.empty() ? "" : "_" + bias_tag);
   const std::string pt_label  = pt_bin_label(pt_min, pt_max);
 
   const std::string out_name = get_arg(argc, argv, "--out",

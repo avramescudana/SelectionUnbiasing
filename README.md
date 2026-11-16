@@ -159,6 +159,8 @@ FastJet too — unlike before, ROOT flags alone are no longer enough (see
   `makefile`'s `NSUB_FLAGS`). Without it, those five plots are
   simply skipped.
 - PYTHIA 8 (only to generate test input, see `SETUP.md`).
+- For the notebooks: Python with `numpy`, `matplotlib`, `uproot`, `ipykernel`
+  (see `SETUP.md`, "Notebooks", for registering the Jupyter kernel).
 - A dataset of ROOT files with a tree like `tgenBefore` containing:
   - `nJets` (optional, for array-style trees)
   - `pt`, `eta`, `phi`, `mass`, `weight`
@@ -330,11 +332,32 @@ Outputs, every plot labeled on-canvas and in the file name with its pT bin
   `-DJET_OBS_HAVE_NSUBJETTINESS`)
 - `plot_theta_basis_weighted_compare_<bin>.pdf`
 
+Optional `--tag <name>` appends `_<name>` to every plot file name and to the
+default `--out` name (e.g. `--tag lognormal` gives
+`plot_eec_compare_100_140_lognormal.pdf`).
+
+### Alternative: log-normal bias
+Instead of the default power-law bias, `startBasis.C` can downsample X jets
+with a log-normal keep probability in pT (`biasType=1`, see `AnalysisCode/BIAS.md`
+for the formula and parameters). The full chain for it, both pT bins, with
+every output tagged `_lognormal`:
+
+```bash
+./runLognormal.sh          # uses $UNBIAS_INPUT_DIR, or: ./runLognormal.sh /path/to/MCOutput/
+```
+
+`plot_pt_bias.ipynb` plots the biased vs unbiased pT spectra and the
+expected ratio for both bias types.
+
 ## Files
 - `PYTHIA/ppjets_root.cc`: generate pp jets at a single jet radius (default R=0.4), store constituents + (optionally) precomputed C/A subjets over R = 0.01…0.20
 - `PYTHIA/ppjets_yoda.cc`: same generation with YODA histogram output
 - `AnalysisCode/startBasis.C`: build one pT bin's biased/unbiased toy samples; writes that bin's TEnv config (bin center, pT window, subjet radii, EEC terms file path)
 - `AnalysisCode/driveBins.C`: driver macro running `startBasis.C` once per pT bin (currently: 100–140 GeV, 140–180 GeV)
+- `AnalysisCode/driveBinsLognormal.C`: same, with the log-normal X bias (per-bin `mu`, `sigma`); outputs tagged `_lognormal`
+- `AnalysisCode/runLognormal.sh`: full log-normal chain (samples, unbiasing weights, plots) for both pT bins
+- `AnalysisCode/BIAS.md`: how the power-law and log-normal pT biases are applied
+- `AnalysisCode/plot_pt_bias.ipynb`: biased vs unbiased pT spectrum and expected ratio, for both bias types
 - `AnalysisCode/eec_terms_example.csv`: example per-bin EEC term grid (reproduces the original compiled default grid)
 - `AnalysisCode/basis_functions.h`: configurable basis framework (subjet moments + EEC), per-bin config-file readers (`read_bin_center`/`read_subjet_radii`/`read_eec_terms_from_config`), EEC terms CSV reader/writer
 - `AnalysisCode/subjet_basis.h`: subjet reclustering — two interchangeable C/A engines (homemade, standalone-FastJet); requires linking against FastJet

@@ -17,7 +17,25 @@ cd "$(dirname "$0")"
 FILES=../Output/files
 PLOTS=../Output/plots
 mkdir -p "$FILES" "$PLOTS"
-T=lognormal
+# Sample tag (required, e.g. export UNBIAS_TAG=10M): every name ends in _lognormal_<tag>.
+if [ -z "$UNBIAS_TAG" ]; then
+  echo "$(basename "$0"): UNBIAS_TAG is not set. Name the input sample, e.g. export UNBIAS_TAG=10M" >&2
+  exit 1
+fi
+T=lognormal_$UNBIAS_TAG
+# Plotting backend (UNBIAS_PLOTTER, see SETUP.md): root (default), matplotlib or both.
+# ROOT plots go to $PLOTS/root, matplotlib plots (plot_mpl.py) to $PLOTS/mpl.
+# plot_unbias_weights always runs: it fills the histograms that plot_mpl.py reads.
+PLOTTER=${UNBIAS_PLOTTER:-root}
+PY=${UNBIAS_PYTHON:-python3}
+ROOT_DIR=$PLOTS/root
+case "$PLOTTER" in
+  root)       ROOT_FORMATS=pdf;  MPL_DIR= ;;
+  matplotlib) ROOT_FORMATS=none; MPL_DIR=$PLOTS/mpl ;;
+  both)       ROOT_FORMATS=pdf;  MPL_DIR=$PLOTS/mpl ;;
+  *) echo "UNBIAS_PLOTTER=$PLOTTER not understood (root, matplotlib or both)" >&2; exit 1 ;;
+esac
+mkdir -p "$ROOT_DIR"
 
 INPUT_DIR=${1:-$UNBIAS_INPUT_DIR}
 if [ -z "$INPUT_DIR" ]; then
@@ -53,6 +71,12 @@ for B in "100 140" "140 180"; do
     --pt-min $LO --pt-max $HI --tag $T \
     --jet-R 0.4 --sd-zcut 0.1 --sd-beta 1.0 --nsub-beta 1.0 \
     ${SUBSTRUCTURE_BINNING} \
-    --plot-dir $PLOTS \
+    --plot-dir $ROOT_DIR --formats $ROOT_FORMATS \
     --out $FILES/unbias_weights_plots_${LO}_${HI}_${T}.root
+  if [ -n "$MPL_DIR" ]; then
+    $PY plot_mpl.py unbias \
+        --hists $FILES/unbias_weights_plots_${LO}_${HI}_${T}.root \
+        --weights $FILES/unbias_weights_${LO}_${HI}_${T}.root \
+        --pt-min $LO --pt-max $HI --tag $T --target-tree tRef --plot-dir $MPL_DIR
+  fi
 done

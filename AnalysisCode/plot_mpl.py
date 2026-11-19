@@ -171,8 +171,30 @@ class Hist:
         return Hist(self.edges, r, e)
 
 
-def draw_hist(ax, h, color, label=None, logx=False, errors=True):
-    """Step histogram with vertical statistical error bars."""
+def data_xlim(hists):
+    """x range spanned by the non-empty bins of any of the histograms (full range if all empty)."""
+    edges = hists[0].edges
+    filled = np.zeros(len(edges) - 1, bool)
+    for h in hists:
+        filled |= np.isfinite(h.values) & (h.values > 0)
+    idx = np.flatnonzero(filled)
+    if not idx.size:
+        return edges[0], edges[-1]
+    return edges[idx[0]], edges[idx[-1] + 1]
+
+
+def draw_band(ax, h, color, alpha=0.2):
+    """Shaded +-1 sigma band around a histogram (bins with undefined values are skipped)."""
+    lo, hi = h.values - h.errors, h.values + h.errors
+    ok = np.isfinite(lo) & np.isfinite(hi)
+    ax.stairs(np.where(ok, hi, np.nan), h.edges, baseline=np.where(ok, lo, np.nan),
+              fill=True, color=color, alpha=alpha, lw=0)
+
+
+def draw_hist(ax, h, color, label=None, logx=False, errors=True, band=False):
+    """Step histogram with vertical statistical error bars (and optionally a shaded band)."""
+    if band:
+        draw_band(ax, h, color)
     ax.stairs(h.values, h.edges, color=color, lw=1.4, label=label)
     if errors:
         sel = np.isfinite(h.values) & (h.values > 0)
@@ -180,13 +202,14 @@ def draw_hist(ax, h, color, label=None, logx=False, errors=True):
                     fmt="none", ecolor=color, elinewidth=1.0, capsize=0)
 
 
-def draw_ratio(ax, r, color):
-    """Ratio as a step line with a shaded +-1 sigma band."""
+def draw_ratio(ax, r, color, errorbars=False, logx=False):
+    """Ratio as a step line with a shaded +-1 sigma band (and optionally error bars)."""
     ax.stairs(r.values, r.edges, color=color, lw=1.4)
-    lo, hi = r.values - r.errors, r.values + r.errors
-    ok = np.isfinite(lo) & np.isfinite(hi)
-    ax.stairs(np.where(ok, hi, np.nan), r.edges, baseline=np.where(ok, lo, np.nan),
-              fill=True, color=color, alpha=0.25, lw=0)
+    draw_band(ax, r, color, alpha=0.25)
+    if errorbars:
+        ok = np.isfinite(r.values)
+        ax.errorbar(r.centers(logx)[ok], r.values[ok], yerr=r.errors[ok],
+                    fmt="none", ecolor=color, elinewidth=1.0, capsize=0)
 
 
 def legend_handles(target_name):
@@ -199,10 +222,11 @@ def legend_handles(target_name):
 # Main panel + ratio-to-target panel
 # ---------------------------------------------------------------------------
 def draw_ratio_plot(ax_top, ax_bot, h_base, h_total, h_target, xtitle, ytitle,
-                    logx, logy, target_name, label=None, legend_loc="upper right"):
-    draw_hist(ax_top, h_target, C_TARGET, logx=logx)
-    draw_hist(ax_top, h_base, C_BASE, logx=logx)
-    draw_hist(ax_top, h_total, C_TOTAL, logx=logx)
+                    logx, logy, target_name, label=None, legend_loc="upper right", bands_only=False):
+    """Main panel + ratio panel. Default: error bars in the main panel, shaded bands in the
+    ratio panel. bands_only=True: shaded +-1 sigma bands in both panels, no error bars."""
+    for h, col in ((h_target, C_TARGET), (h_base, C_BASE), (h_total, C_TOTAL)):
+        draw_hist(ax_top, h, col, logx=logx, errors=not bands_only, band=bands_only)
     if logx:
         ax_top.set_xscale("log")
     if logy:
@@ -223,11 +247,11 @@ def draw_ratio_plot(ax_top, ax_bot, h_base, h_total, h_target, xtitle, ytitle,
     draw_ratio(ax_bot, h_base.divide(h_target), C_BASE)
     ax_bot.axhline(1.0, color="black", ls="--", lw=0.8)
     ax_bot.set_ylim(0.5, 1.5)
-    ax_bot.set_xlim(h_target.edges[0], h_target.edges[-1])
+    ax_bot.set_xlim(*data_xlim([h_base, h_total, h_target]))
     if logx:   # no labels on minor log ticks (they overlap on ranges under a decade)
         ax_bot.xaxis.set_minor_formatter(matplotlib.ticker.NullFormatter())
     ax_bot.set_xlabel(xtitle)
-    ax_bot.set_ylabel("Ratio to unbiased")
+    ax_bot.set_ylabel("Ratio")
 
 
 def ratio_figure():
@@ -265,14 +289,7 @@ def plot_startbasis(path, plot_dir):
     pos = h_ref.values[h_ref.values > 0]
     if pos.size:
         ax.set_ylim(0.5 * pos.min(), 2 * pos.max())
-    # x range: the filled bins plus the same number of empty bins on each side
-    filled = np.flatnonzero((h_ref.values > 0) | (h_bia.values > 0))
-    margin = 3
-    if filled.size:   # bins are uniform; the margin may extend past the histogram range
-        width = edges[1] - edges[0]
-        ax.set_xlim(edges[filled[0]] - margin * width, edges[filled[-1] + 1] + margin * width)
-    else:
-        ax.set_xlim(edges[0], edges[-1])
+    ax.set_xlim(*data_xlim([h_ref, h_bia]))
     ax.set_xlabel(r"$p_{\mathrm{T}}$ (GeV)")
     ax.set_ylabel(r"$\mathrm{d}N/\mathrm{d}p_{\mathrm{T}}$")
     ax.legend()
@@ -287,7 +304,7 @@ OBSERVABLES = [
     ("mass", "jet_mass", r"$M_{\mathrm{jet}}$ [GeV]"),
     ("rg", "rg", r"$R_{\mathrm{g}}$"),
     ("kt", "kt", r"$k_{\mathrm{T}}$ [GeV]"),
-    ("broad", "broadening", r"$\lambda_{1}^{(\kappa=1)}$"),
+    ("broad", "broadening", r"$\lambda_{1}$"),
     ("tau1", "tau1", r"$\tau_{1}$"),
     ("tau2", "tau2", r"$\tau_{2}$"),
     ("tau3", "tau3", r"$\tau_{3}$"),
@@ -329,10 +346,10 @@ def plot_unbias(hists_path, weights_path, pt_min, pt_max, tag, target_tree, plot
             pos = hw.values[hw.values > 0]
             if pos.size:
                 ax.set_ylim(0.5 * pos.min(), 2 * pos.max())
-            ax.set_xlim(hw.edges[0], hw.edges[-1])
+            ax.set_xlim(*data_xlim([hw]))
             ax.set_xlabel(r"Unbiasing weight $w$")
             ax.set_ylabel("Entries")
-            ax.text(0.04, 0.94, label, transform=ax.transAxes, va="top")
+            ax.text(0.96, 0.94, label, transform=ax.transAxes, va="top", ha="right")   # data peaks on the left
             save(fig, plot_dir, "unbias_weights")
 
         # EEC (log-log)

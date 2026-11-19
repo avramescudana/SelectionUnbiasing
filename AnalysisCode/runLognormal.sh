@@ -23,6 +23,10 @@ if [ -z "$UNBIAS_TAG" ]; then
   exit 1
 fi
 T=lognormal_$UNBIAS_TAG
+# Fit length (see unbias_weights.cc): UNBIAS_MAX_ITER = number of iterations (default 20)
+# or "auto": run until every moment matches its target to UNBIAS_CONVERGE_ACCURACY
+# (relative, default 5e-3), or the loss stops improving, or 5000 iterations.
+FIT_ARGS="--max-iter ${UNBIAS_MAX_ITER:-20} --converge-accuracy ${UNBIAS_CONVERGE_ACCURACY:-5e-3}"
 # Plotting backend (UNBIAS_PLOTTER, see SETUP.md): root (default), matplotlib or both.
 # ROOT plots go to $PLOTS/root, matplotlib plots (plot_mpl.py) to $PLOTS/mpl.
 # plot_unbias_weights always runs: it fills the histograms that plot_mpl.py reads.
@@ -57,7 +61,7 @@ for B in "100 140" "140 180"; do
     --target-input $FILES/startBasis_${LO}_${HI}_${T}.root --target-tree tRef \
     --config $FILES/unbiasing_config_${LO}_${HI}_${T}.env \
     --pt-min $LO --pt-max $HI --subjet-source fastjet \
-    --out $FILES/unbias_weights_${LO}_${HI}_${T}.root --mode run
+    --out $FILES/unbias_weights_${LO}_${HI}_${T}.root --mode run ${FIT_ARGS}
 done
 
 # 3. validation plots (file names get _<LO>_<HI>_lognormal)

@@ -45,6 +45,10 @@ if [ -z "$UNBIAS_TAG" ]; then
   exit 1
 fi
 S=_$UNBIAS_TAG
+# Fit length (see unbias_weights.cc): UNBIAS_MAX_ITER = number of iterations (default 20)
+# or "auto": run until every moment matches its target to UNBIAS_CONVERGE_ACCURACY
+# (relative, default 5e-3), or the loss stops improving, or 5000 iterations.
+FIT_ARGS="--max-iter ${UNBIAS_MAX_ITER:-20} --converge-accuracy ${UNBIAS_CONVERGE_ACCURACY:-5e-3}"
 
 # --subjet-source fastjet: recluster subjets on the fly from constituents
 # using the standalone-FastJet Cambridge/Aachen engine in subjet_basis.h
@@ -62,7 +66,7 @@ S=_$UNBIAS_TAG
     --pt-min 100 --pt-max 140 \
     --subjet-source fastjet \
     --out $FILES/unbias_weights_100_140${S}.root \
-    --mode run
+    --mode run ${FIT_ARGS}
 
 # ---- Bin 2: 140-180 GeV ----
 ./unbias_weights \
@@ -74,4 +78,4 @@ S=_$UNBIAS_TAG
     --pt-min 140 --pt-max 180 \
     --subjet-source fastjet \
     --out $FILES/unbias_weights_140_180${S}.root \
-    --mode run
+    --mode run ${FIT_ARGS}

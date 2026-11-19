@@ -78,6 +78,24 @@ stops if it is not set). Every output name ends in it (`startBasis_100_140_10M.r
 other. Use the same tag for all steps (`driveBins*.C`, the `run*.sh` scripts) and set `TAG` in the
 notebook to match.
 
+### Fit length and convergence
+
+`unbias_weights` runs a fixed 20 iterations by default, which is usually not converged. To run each
+fit until it converges instead:
+
+```bash
+export UNBIAS_MAX_ITER=auto            # default 20 (fixed); or any number of iterations
+export UNBIAS_CONVERGE_ACCURACY=5e-3   # optional: stop once every moment matches its target to 0.5%
+```
+
+before `runUnbiasing.sh` / `runLognormal.sh`. With `auto`, a fit stops when the largest relative
+mismatch between reweighted and target moments (`mx_rel` in the log) drops below the accuracy, or
+when the loss stops improving, or after 5000 iterations. The log ends each fit with
+`Best at iter N ... [converged]` or `[NOT converged: stopped at max-iter]`, and the `meta` tree of
+`unbias_weights_*.root` records `n_iter` and `converged`. A smaller accuracy (e.g. `2e-3`) is
+tighter but takes longer; there is no point going far below the statistical precision of the
+moments (roughly 1/sqrt(number of jets in the bin)).
+
 ### ROOT or matplotlib plots
 
 `UNBIAS_PLOTTER` chooses who draws the plots in `Output/plots/`:

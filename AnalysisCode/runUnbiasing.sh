@@ -47,8 +47,8 @@ fi
 S=_$UNBIAS_TAG
 # Fit length (see unbias_weights.cc): UNBIAS_MAX_ITER = number of iterations (default 20)
 # or "auto": run until every moment matches its target to UNBIAS_CONVERGE_ACCURACY
-# (relative, default 5e-3), or the loss stops improving, or 5000 iterations.
-FIT_ARGS="--max-iter ${UNBIAS_MAX_ITER:-20} --converge-accuracy ${UNBIAS_CONVERGE_ACCURACY:-5e-3}"
+# (relative, default 5e-3), or the loss stops improving, or UNBIAS_MAX_ITER_CAP iterations (default 5000).
+FIT_ARGS="--max-iter ${UNBIAS_MAX_ITER:-20} --converge-accuracy ${UNBIAS_CONVERGE_ACCURACY:-5e-3} --max-iter-cap ${UNBIAS_MAX_ITER_CAP:-5000}"
 
 # --subjet-source fastjet: recluster subjets on the fly from constituents
 # using the standalone-FastJet Cambridge/Aachen engine in subjet_basis.h

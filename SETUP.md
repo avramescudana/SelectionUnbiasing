@@ -86,6 +86,7 @@ fit until it converges instead:
 ```bash
 export UNBIAS_MAX_ITER=auto            # default 20 (fixed); or any number of iterations
 export UNBIAS_CONVERGE_ACCURACY=5e-3   # optional: stop once every moment matches its target to 0.5%
+export UNBIAS_MAX_ITER_CAP=5000        # optional: hard limit on iterations with UNBIAS_MAX_ITER=auto
 ```
 
 before `runUnbiasing.sh` / `runLognormal.sh`. With `auto`, a fit stops when the largest relative

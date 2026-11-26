@@ -45,12 +45,15 @@ void driveBinsLognormal(const char* inputDirArg = "") {
     const char* v = gSystem->Getenv(name);
     return (v && v[0]) ? std::atof(v) : def;
   };
+  //   UNBIAS_FILL                fill-up of the biased sample: 0 = Y' from the unbiased Y jets (default),
+  //                              1 = resampled kept X jets (startBasis fillMode, see BIAS.md)
   const double lnNorm    = envNum("UNBIAS_LN_NORM", 1.0);    // 1 = strongest bias for this shape
+  const int fillMode     = (int)envNum("UNBIAS_FILL", 0);
   const double lnSigma_1 = envNum("UNBIAS_LN_SIGMA", 0.12), lnSigma_2 = lnSigma_1;
   const double peak_1 = envNum("UNBIAS_LN_PEAK1", -1.0), peak_2 = envNum("UNBIAS_LN_PEAK2", -1.0);
   const double lnMu_1 = (peak_1 > 0) ? std::log(peak_1) + lnSigma_1 * lnSigma_1 : 4.733;   // bin 100-140 (default peak 112 GeV)
   const double lnMu_2 = (peak_2 > 0) ? std::log(peak_2) + lnSigma_2 * lnSigma_2 : 5.0383;  // bin 140-180 (default peak 152 GeV)
-  std::cout << "driveBinsLognormal: sigma=" << lnSigma_1 << " norm=" << lnNorm
+  std::cout << "driveBinsLognormal: sigma=" << lnSigma_1 << " norm=" << lnNorm << " fill=" << fillMode
             << " mu1=" << lnMu_1 << " (peak " << std::exp(lnMu_1 - lnSigma_1 * lnSigma_1) << " GeV)"
             << " mu2=" << lnMu_2 << " (peak " << std::exp(lnMu_2 - lnSigma_2 * lnSigma_2) << " GeV)" << std::endl;
 
@@ -75,7 +78,7 @@ void driveBinsLognormal(const char* inputDirArg = "") {
              100, 140, p, d, rngSeed, binCenter,
              filesDir + "/unbiasing_config_100_140_lognormal" + tag + ".env",
              subjetRadii, eecTermsFile, unbiasRootPlotDir(plotsDir),
-             biasType, lnMu_1, lnSigma_1, lnNorm);
+             biasType, lnMu_1, lnSigma_1, lnNorm, fillMode);
   unbiasMplStartBasisPlot(filesDir + "/startBasis_100_140_lognormal" + tag + ".root", plotsDir);
 
   // ---- Bin 2: 140-180 GeV ----
@@ -83,6 +86,6 @@ void driveBinsLognormal(const char* inputDirArg = "") {
              140, 180, p, d, rngSeed, binCenter,
              filesDir + "/unbiasing_config_140_180_lognormal" + tag + ".env",
              subjetRadii, eecTermsFile, unbiasRootPlotDir(plotsDir),
-             biasType, lnMu_2, lnSigma_2, lnNorm);
+             biasType, lnMu_2, lnSigma_2, lnNorm, fillMode);
   unbiasMplStartBasisPlot(filesDir + "/startBasis_140_180_lognormal" + tag + ".root", plotsDir);
 }

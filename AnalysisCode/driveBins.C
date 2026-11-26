@@ -69,6 +69,13 @@ void driveBins(const char* inputDirArg = "") {
   const double binCenter = -1.0;              // derive from the pT window (midpoint); also sets the EEC angular-cutoff scale 100/BinCenter
   const char* subjetRadii = "0.10,0.20";              // same subjet radii for both bins, for now
   const char* eecTermsFile = "eec_terms_example.csv"; // shared EEC term grid for both bins, for now
+  // Fill-up of the biased sample (startBasis fillMode, see BIAS.md), from $UNBIAS_FILL:
+  // 0 = with Y', drawn from the unbiased Y jets (default); 1 = by resampling the kept X jets.
+  const char* envFill = gSystem->Getenv("UNBIAS_FILL");
+  const int fillMode = (envFill && envFill[0]) ? std::atoi(envFill) : 0;
+  // log-normal arguments of startBasis, unused here (biasType = 0, power law)
+  const int biasType = 0;
+  const double lnMu = 4.733, lnSigma = 0.12, lnNorm = 1.0;
 
   // Generated files go under ../Output/ (next to AnalysisCode/, git-ignored):
   // ROOT/config files in Output/files/, plots in Output/plots/.
@@ -96,7 +103,8 @@ void driveBins(const char* inputDirArg = "") {
              filesDir + "/unbiasing_config_100_140" + tag + ".env",
              subjetRadii,
              eecTermsFile,
-             unbiasRootPlotDir(plotsDir));
+             unbiasRootPlotDir(plotsDir),
+             biasType, lnMu, lnSigma, lnNorm, fillMode);
   unbiasMplStartBasisPlot(filesDir + "/startBasis_100_140" + tag + ".root", plotsDir);
 
   // ---- Bin 2: 140-180 GeV ----
@@ -108,6 +116,7 @@ void driveBins(const char* inputDirArg = "") {
              filesDir + "/unbiasing_config_140_180" + tag + ".env",
              subjetRadii,
              eecTermsFile,
-             unbiasRootPlotDir(plotsDir));
+             unbiasRootPlotDir(plotsDir),
+             biasType, lnMu, lnSigma, lnNorm, fillMode);
   unbiasMplStartBasisPlot(filesDir + "/startBasis_140_180" + tag + ".root", plotsDir);
 }

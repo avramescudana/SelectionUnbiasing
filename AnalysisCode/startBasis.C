@@ -170,7 +170,14 @@ void startBasis(const char* inputDir = "/path/to/MCOutput/",  // no sensible def
                 // Amplitude of the log-normal keep probability (its maximum
                 // value), in (0,1]. 1 = strongest bias for this shape;
                 // smaller values give a weaker bias with the same shape.
-                double lnNorm = 1.0) {
+                double lnNorm = 1.0,
+                // How the biased sample is filled back up to the size of
+                // tRef after X is downsampled (see BIAS.md):
+                //   fillMode = 0: with Y', drawn from the unbiased Y jets
+                //                 (default; the bias is diluted by Y');
+                //   fillMode = 1: by resampling the kept X jets, so the whole
+                //                 biased sample follows the bias shape.
+                int fillMode = 0) {
 
   // config
   const char* treeName = "tgenBefore";
@@ -354,7 +361,24 @@ void startBasis(const char* inputDir = "/path/to/MCOutput/",  // no sensible def
     std::vector<double> const_phi;
     std::vector<std::vector<double>> subjet_pt;  // per forwarded radius
   };
+  // the jet currently held in the out_* branch variables
+  auto current_rec = [&]() {
+    JetRec rec;
+    rec.pt = out_pt;
+    rec.pt_raw = out_pt_raw;
+    rec.pt_shifted = out_pt_shifted;
+    rec.eta = out_eta;
+    rec.phi = out_phi;
+    rec.mass = out_mass;
+    rec.weight = out_weight;
+    rec.const_pt = out_const_pt;
+    rec.const_eta = out_const_eta;
+    rec.const_phi = out_const_phi;
+    rec.subjet_pt = out_subjet_pt;   // copy all forwarded radii
+    return rec;
+  };
   std::vector<JetRec> y_cache;
+  std::vector<JetRec> xkept_cache;   // kept X jets, the fill-up pool for fillMode = 1
   std::mt19937 rng(rngSeed);
   std::uniform_real_distribution<double> uni01(0.0, 1.0);
 
@@ -415,7 +439,10 @@ void startBasis(const char* inputDir = "/path/to/MCOutput/",  // no sensible def
         const double biasWeight = (biasType == 1)
             ? lognormalBiasWeight(ptRaw, lnMu, lnSigma, lnNorm)
             : (ptL_p - ptH_p * d + (-1.0 + d) * ptRaw_p) / (ptL_p - ptH_p);
-        if (uni01(rng) < biasWeight) tBiased->Fill();
+        if (uni01(rng) < biasWeight) {
+          tBiased->Fill();
+          if (fillMode == 1) xkept_cache.push_back(current_rec());
+        }
 
         // ---- Y jet ----
         hPtY->Fill(ptRaw, *weight);
@@ -424,25 +451,15 @@ void startBasis(const char* inputDir = "/path/to/MCOutput/",  // no sensible def
         tRef->Fill();
         tPP->Fill();
 
-        JetRec rec;
-        rec.pt = out_pt;
-        rec.pt_raw = out_pt_raw;
-        rec.pt_shifted = out_pt_shifted;
-        rec.eta = out_eta;
-        rec.phi = out_phi;
-        rec.mass = out_mass;
-        rec.weight = out_weight;
-        rec.const_pt = out_const_pt;
-        rec.const_eta = out_const_eta;
-        rec.const_phi = out_const_phi;
-        rec.subjet_pt = out_subjet_pt;   // copy all forwarded radii
-        y_cache.push_back(std::move(rec));
+        y_cache.push_back(current_rec());
       }
     }
   }
 
-  // Build Y' by oversampling Y (bias) while preserving total biased sample size.
-  if (!y_cache.empty()) {
+  // Build Y' by oversampling a pool of jets while preserving total biased sample size.
+  // fillMode 0: the pool is Y (unbiased); fillMode 1: the pool is the kept X jets.
+  const std::vector<JetRec> &pool = (fillMode == 1) ? xkept_cache : y_cache;
+  if (!pool.empty()) {
     const size_t x_count = static_cast<size_t>(tX->GetEntries());
     const size_t y_count = y_cache.size();
     const size_t x_kept = static_cast<size_t>(tBiased->GetEntries()); // after downsampling X
@@ -451,9 +468,9 @@ void startBasis(const char* inputDir = "/path/to/MCOutput/",  // no sensible def
     if (desired_total > x_kept) {
       yprime_count = desired_total - x_kept;
     }
-    std::uniform_int_distribution<size_t> uni(0, y_count - 1);
+    std::uniform_int_distribution<size_t> uni(0, pool.size() - 1);
     for (size_t i = 0; i < yprime_count; ++i) {
-      const JetRec &rec = y_cache[uni(rng)];
+      const JetRec &rec = pool[uni(rng)];
       out_pt = rec.pt;
       out_pt_raw = rec.pt_raw;
       out_pt_shifted = rec.pt_shifted;
@@ -526,7 +543,7 @@ void startBasis(const char* inputDir = "/path/to/MCOutput/",  // no sensible def
 
   TLegend* leg = new TLegend(0.50, 0.78, 0.88, 0.88);
   leg->AddEntry(hRef, "Unbiased (X #cup Y)", "l");
-  leg->AddEntry(hBiased, "Biased (X down + Y')", "l");
+  leg->AddEntry(hBiased, (fillMode == 1) ? "Biased (X down, resampled)" : "Biased (X down + Y')", "l");
   leg->SetBorderSize(0);
   leg->Draw();
 

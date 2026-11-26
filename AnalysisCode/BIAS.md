@@ -34,6 +34,17 @@ Plot it with `plot_pt_bias.ipynb`.
 
 With `biasType=1`, `p` and `d` are ignored. Y′ oversampling is unchanged.
 
+**Fill-up of the biased sample** (`fillMode`, the last argument of `startBasis()`, for both bias shapes):
+
+| `fillMode` | biased sample | effect |
+|---|---|---|
+| `0` (default) | X (kept) ∪ Y′, with Y′ drawn from the unbiased Y jets | only a fraction $k/2$ of the jets carries the bias, so the bias is diluted |
+| `1` | X (kept) ∪ jets drawn with replacement from X (kept) | the whole biased sample follows the bias shape |
+
+In both cases the biased sample has the same size as the reference, so the rest of the chain is unchanged.
+With `fillMode=1` the drawn jets repeat the kept X jets, so the biased sample has fewer independent jets than entries.
+In `driveBins.C` and `driveBinsLognormal.C` it is set with `UNBIAS_FILL=1` (use its own `UNBIAS_TAG`, e.g. `1M_resampled`).
+
 **Functional form:** the normalised log-normal pdf
 
 $$\bar D(p_T)=\frac{1}{\sqrt{2\pi}\,\sigma\,p_T}\exp\!\left[-\frac{(\ln p_T-\mu)^2}{2\sigma^2}\right]$$

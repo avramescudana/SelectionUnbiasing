@@ -280,6 +280,13 @@ def plot_startbasis(path, plot_dir):
     h_bia = Hist.fill(tr["tBiased"]["pt_raw"], tr["tBiased"]["weight"], edges)
     h_pp = Hist.fill(np.concatenate([tr["tX"]["pt_raw"], tr["tY"]["pt_raw"]]),            # X + Y (hpTpp)
                      np.concatenate([tr["tX"]["weight"], tr["tY"]["weight"]]), edges)
+    # fillMode 1 (fully biased, BIAS.md): the biased sample is smaller; draw it with the reference's
+    # integral (fillMode 0: equal sizes, factor 1)
+    def to_ref(h):
+        s = h.values.sum()
+        f = h_ref.values.sum() / s if s > 0 else 1.0
+        return Hist(h.edges, h.values * f, h.errors * f)
+    h_bia, h_pp = to_ref(h_bia), to_ref(h_pp)
 
     fig, ax = plt.subplots(figsize=(5, 4.6))
     ax.stairs(h_pp.values, edges, color=C_PP, lw=0.8, zorder=1)   # X + Y (hpTpp), unlabelled as in ROOT

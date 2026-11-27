@@ -3,7 +3,8 @@
 #   1. driveBinsLognormal.C  -> biased/reference trees + per-bin configs
 #   2. unbias_weights        -> unbiasing weights
 #   3. plot_unbias_weights   -> validation plots
-# Every output carries "_lognormal" in its name, so it never overwrites the
+# Every output carries "_lognormal_<set>" in its name (set = $UNBIAS_LN_PARAMS, default
+# params1, see driveBinsLognormal.C), so it never overwrites the
 # power-law outputs of driveBins.C / runUnbiasing.sh / runPlotUnbiasedWeights.sh.
 #
 # Needs the same environment as the power-law chain (see SETUP.md):
@@ -17,12 +18,12 @@ cd "$(dirname "$0")"
 FILES=../Output/files
 PLOTS=../Output/plots
 mkdir -p "$FILES" "$PLOTS"
-# Sample tag (required, e.g. export UNBIAS_TAG=10M): every name ends in _lognormal_<tag>.
+# Sample tag (required, e.g. export UNBIAS_TAG=10M): every name ends in _lognormal_<set>_<tag>.
 if [ -z "$UNBIAS_TAG" ]; then
   echo "$(basename "$0"): UNBIAS_TAG is not set. Name the input sample, e.g. export UNBIAS_TAG=10M" >&2
   exit 1
 fi
-T=lognormal_$UNBIAS_TAG
+T=lognormal_${UNBIAS_LN_PARAMS:-params1}_$UNBIAS_TAG   # log-normal parameter set (see driveBinsLognormal.C) + sample tag
 # Fit length (see unbias_weights.cc): UNBIAS_MAX_ITER = number of iterations (default 20)
 # or "auto": run until every moment matches its target to UNBIAS_CONVERGE_ACCURACY
 # (relative, default 5e-3), or the loss stops improving, or UNBIAS_MAX_ITER_CAP iterations (default 5000).
@@ -64,7 +65,7 @@ for B in "100 140" "140 180"; do
     --out $FILES/unbias_weights_${LO}_${HI}_${T}.root --mode run ${FIT_ARGS}
 done
 
-# 3. validation plots (file names get _<LO>_<HI>_lognormal)
+# 3. validation plots (file names get _<LO>_<HI>_lognormal_<set>)
 SUBSTRUCTURE_BINNING="--mass-bins 30 --rg-bins 13 --kt-bins 20 --broadening-bins 25 --tau-bins 25"
 for B in "100 140" "140 180"; do
   set -- $B; LO=$1; HI=$2

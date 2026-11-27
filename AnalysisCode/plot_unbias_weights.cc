@@ -876,6 +876,25 @@ int main(int argc, char* argv[]) {
             << "  (these jets are excluded from the R_g/k_T histograms, not binned at 0)"
             << std::endl;
 
+  // Normalise the biased (base) and reweighted (total) samples to the reference's
+  // number of jets: with fillMode 1 (fully biased, startBasis.C, BIAS.md) the biased
+  // sample is smaller than the reference, which would offset every ratio. One factor
+  // per sample, from the pT histograms (all jets in the window), applied to every
+  // observable except the EEC, which is normalised per jet below.
+  // fillMode 0: equal sizes, so both factors are 1 (for unit generator weights).
+  {
+    const double I_tgt = h_target->Integral();
+    const double f_base  = (h_base->Integral()  > 0) ? I_tgt / h_base->Integral()  : 1.0;
+    const double f_total = (h_total->Integral() > 0) ? I_tgt / h_total->Integral() : 1.0;
+    std::cout << "Normalising to the reference: base x " << f_base << ", total x " << f_total << std::endl;
+    for (TH1D *h : { h_base, h_mass_base, h_rg_base, h_kt_base, h_broad_base }) h->Scale(f_base);
+    for (TH1D *h : { h_total, h_mass_total, h_rg_total, h_kt_total, h_broad_total }) h->Scale(f_total);
+#ifdef JET_OBS_HAVE_NSUBJETTINESS
+    for (TH1D *h : { h_tau1_base, h_tau2_base, h_tau3_base, h_tau21_base, h_tau32_base }) h->Scale(f_base);
+    for (TH1D *h : { h_tau1_total, h_tau2_total, h_tau3_total, h_tau21_total, h_tau32_total }) h->Scale(f_total);
+#endif
+  }
+
   style_hist(h_base,   kBlue + 1,  20, cfg);
   style_hist(h_total,  kRed + 1,   21, cfg);
   style_hist(h_target, kGreen + 2, 22, cfg);

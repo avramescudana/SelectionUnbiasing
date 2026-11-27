@@ -69,8 +69,8 @@ void driveBins(const char* inputDirArg = "") {
   const double binCenter = -1.0;              // derive from the pT window (midpoint); also sets the EEC angular-cutoff scale 100/BinCenter
   const char* subjetRadii = "0.10,0.20";              // same subjet radii for both bins, for now
   const char* eecTermsFile = "eec_terms_example.csv"; // shared EEC term grid for both bins, for now
-  // Fill-up of the biased sample (startBasis fillMode, see BIAS.md), from $UNBIAS_FILL:
-  // 0 = with Y', drawn from the unbiased Y jets (default); 1 = by resampling the kept X jets.
+  // How the reference and biased samples are built (startBasis fillMode, see BIAS.md), from $UNBIAS_FILL:
+  // 0 = partly biased (default): X = Y, biased = kept X + Y'; 1 = fully biased: biased = the kept jets only.
   const char* envFill = gSystem->Getenv("UNBIAS_FILL");
   const int fillMode = (envFill && envFill[0]) ? std::atoi(envFill) : 0;
   // log-normal arguments of startBasis, unused here (biasType = 0, power law)

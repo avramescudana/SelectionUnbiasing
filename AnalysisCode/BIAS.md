@@ -34,24 +34,25 @@ Plot it with `plot_pt_bias.ipynb`.
 
 With `biasType=1`, `p` and `d` are ignored. Y′ oversampling is unchanged.
 
-**Fill-up of the biased sample** (`fillMode`, the last argument of `startBasis()`, for both bias shapes):
+**How the reference and biased samples are built** (`fillMode`, the last argument of `startBasis()`, for both bias shapes, set with `UNBIAS_FILL`).
+"Kept" means kept with probability $w_\mathrm{bias}(p_T)$; $k$ is the fraction kept.
 
-| `fillMode` | biased sample | effect |
-|---|---|---|
-| `0` (default) | X (kept) ∪ Y′, with Y′ drawn from the unbiased Y jets | only a fraction $k/2$ of the jets carries the bias, so the bias is diluted |
-| `1` | X (kept) ∪ jets drawn with replacement from X (kept) | the whole biased sample follows the bias shape |
+- **Partly biased** (`fillMode` 0, default, tag `<TAG>`): every jet is both an X and a Y jet. Reference = X ∪ Y; biased = X (kept) ∪ Y′, with Y′ drawn from Y up to the reference size. Only a fraction $k/2$ of the biased sample carries the bias. Biased/unbiased $=(w_\mathrm{bias}+2-k)/2$, exact weights $\propto 2/(w_\mathrm{bias}+2-k)$.
+- **Fully biased** (`fillMode` 1, tag `<TAG>_downsampled`): reference = all jets; biased = only the kept jets, none repeated, so it is about $k$ times smaller. Biased/unbiased $=w_\mathrm{bias}/k$, exact weights $\propto 1/w_\mathrm{bias}$.
 
-In both cases the biased sample has the same size as the reference, so the rest of the chain is unchanged.
-With `fillMode=1` the drawn jets repeat the kept X jets, so the biased sample has fewer independent jets than entries.
-In `driveBins.C` and `driveBinsLognormal.C` it is set with `UNBIAS_FILL=1` (use its own `UNBIAS_TAG`, e.g. `1M_resampled`).
+The exact weights depend only on $p_T$. The `tWeights` tree (class weights of the notes' Eq. 5.1) is written only for partly biased, and is not the exact weight for a $p_T$-dependent bias.
+The fit does not need equal sample sizes (the targets are averages and the weights have mean 1). For the plots, `plot_unbias_weights` and the startBasis plots scale the biased and reweighted histograms to the reference's integral (a factor 1 when partly biased).
+Give each mode its own `UNBIAS_TAG`, or its outputs overwrite the other's.
+
+Earlier tests, kept on disk only: `<TAG>_resampled` (fill-up by resampling the kept X jets), `<TAG>_notes` (X and Y disjoint halves) and `<TAG>_split` (reference and biased sample from independent halves). They agreed with partly biased (`_notes`) and fully biased (`_resampled`, `_split`) within errors.
 
 **Functional form:** the normalised log-normal pdf
 
 $$\bar D(p_T)=\frac{1}{\sqrt{2\pi}\,\sigma\,p_T}\exp\!\left[-\frac{(\ln p_T-\mu)^2}{2\sigma^2}\right]$$
 
-is divided by its value at the mode $p_T^*=e^{\mu-\sigma^2}$, so the maximum is 1, and multiplied by $c$:
+is divided by its value at its peak (mode) $p_T^\mathrm{peak}=e^{\mu-\sigma^2}$, the pT where a jet is most likely to be kept (not the mean jet pT), so the maximum is 1, and multiplied by $c$:
 
-$$w_\mathrm{bias}(p_T)=c\,\frac{\bar D(p_T)}{\bar D(p_T^*)}
+$$w_\mathrm{bias}(p_T)=c\,\frac{\bar D(p_T)}{\bar D(p_T^\mathrm{peak})}
 =c\,\exp\!\left[-\frac{(\ln p_T-\mu)^2}{2\sigma^2}-\ln p_T+\mu-\frac{\sigma^2}{2}\right].$$
 
 **Normalisation $c$:** the shape of the kept X jets does not depend on $c$, but the strength does. The expected ratio is $(w_\mathrm{bias}+2-k)/2$ with $k=\langle w_\mathrm{bias}\rangle_X$, so its deviation from 1 scales with $c$. $c=1$ is the strongest bias for a given shape; smaller $c$ weakens it. $w_\mathrm{bias}$ is capped at 1.
@@ -68,16 +69,27 @@ root -l -b -q 'startBasis.C("/path/to/MCOutput/", "../Output/files/out.root", 10
 ./runLognormal.sh          # uses $UNBIAS_INPUT_DIR, or: ./runLognormal.sh /path/to/MCOutput/
 ```
 
-It builds (`make`), runs `driveBinsLognormal.C`, then `unbias_weights` and `plot_unbias_weights` (with `--tag lognormal`) for both pT bins.
-Every output carries `_lognormal` in its name, so it never overwrites the power-law outputs: ROOT and config files in `Output/files/`, plots in `Output/plots/`.
+It builds (`make`), runs `driveBinsLognormal.C`, then `unbias_weights` and `plot_unbias_weights` (with `--tag lognormal_<set>_<TAG>`) for both pT bins.
+Every output carries `_lognormal_<set>` in its name, so it never overwrites the power-law outputs or the other parameter set: ROOT and config files in `Output/files/`, plots in `Output/plots/`.
 
 ## `driveBinsLognormal.C`
 
-Driver macro: calls `startBasis()` once per pT bin with `biasType=1`, writing `startBasis_<bin>_lognormal.root` and `unbiasing_config_<bin>_lognormal.env` to `Output/files/`. Input directory as for `driveBins.C`: argument or `$UNBIAS_INPUT_DIR`.
+Driver macro: calls `startBasis()` once per pT bin with `biasType=1`, writing `startBasis_<bin>_lognormal_<set>_<TAG>.root` and `unbiasing_config_<bin>_lognormal_<set>_<TAG>.env` to `Output/files/`. Input directory as for `driveBins.C`: argument or `$UNBIAS_INPUT_DIR`.
 
-`lnMu` and `lnSigma` are set per bin. The curve peaks at $e^{\mu-\sigma^2}$: 112 GeV for 100–140 (`mu=4.733`) and 152 GeV for 140–180 (`mu=5.0383`), both with `sigma=0.12`, so the bias acts inside each bin. With one shared pair of values, the 140–180 bin would see almost no bias.
+The parameters come from a named set, chosen with `UNBIAS_LN_PARAMS` (default `params1`). `lnMu` is set per bin, so the bias acts inside each bin; with one shared value, the 140–180 bin would see almost no bias. The curve peaks at $e^{\mu-\sigma^2}$:
+
+| set | 100–140 | 140–180 | `sigma` | `norm` | effect on the mean jet pT |
+|---|---|---|---|---|---|
+| `params1` | peak 112 GeV (`mu=4.733`) | peak 152 GeV (`mu=5.0383`) | 0.12 | 1 | peak below the unbiased mean, the biased mean goes down |
+| `params2` | peak 128 GeV (`mu=4.85563`) | peak 168 GeV (`mu=5.12756`) | 0.06 | 1 | narrower, peak above the unbiased mean, the biased mean goes up |
+
+Single values can still be overridden on top of the set with `UNBIAS_LN_SIGMA`, `UNBIAS_LN_NORM`, `UNBIAS_LN_PEAK1/2`. Example, `params2` fully biased:
+
+```bash
+UNBIAS_LN_PARAMS=params2 UNBIAS_FILL=1 UNBIAS_TAG=1M_downsampled ./runLognormal.sh /path/to/MCOutput/
+```
 
 ## Plot
 
 `plot_pt_bias.ipynb` (needs `uproot`, `numpy`, `matplotlib`) plots the unbiased and biased pT spectra and their ratio against the expected curve: first for the power-law output of `driveBins.C`, then (section "Log-normal bias") for the 100–140 output of `driveBinsLognormal.C`.
-Its `LN_MU`, `LN_SIGMA`, `LN_NORM` are typed by hand and must match the bin-1 values above. Plots are saved to `Output/plots/`.
+Its `LN_PARAMS` picks the parameter set; the values in its `LN_SETS` are typed by hand and must match the table above. Plots are saved to `Output/plots/`.

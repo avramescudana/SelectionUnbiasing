@@ -109,11 +109,12 @@ def pt_subdir(pt_min, pt_max):
 
 
 def parse_tag(tag):
-    """What follows the pT bin in the ROOT file names ("", "10M", "lognormal", "lognormal_10M")
-    -> (bias, sample). No "lognormal" means the default power-law bias; sample is "" if untagged."""
+    """What follows the pT bin in the ROOT file names ("", "10M", "lognormal", "lognormal_10M",
+    "quench_out_4M") -> (bias, sample). Neither "lognormal" nor "quench" means the default
+    power-law bias; sample is "" if untagged."""
     parts = [p for p in tag.split("_") if p]
-    bias = "lognormal" if "lognormal" in parts else "powerlaw"
-    sample = "_".join(p for p in parts if p != "lognormal")
+    bias = next((b for b in ("lognormal", "quench") if b in parts), "powerlaw")
+    sample = "_".join(p for p in parts if p != bias)
     return bias, sample
 
 
@@ -268,13 +269,13 @@ def plot_startbasis(path, plot_dir):
     m = re.fullmatch(r"startBasis_(\d+(?:\.\d+)?)_(\d+(?:\.\d+)?)(.*)\.root", os.path.basename(path))
     if m:
         plot_dir = out_dir(plot_dir, m.group(3), float(m.group(1)), float(m.group(2)))
-    # binning as in startBasis.C: pT window +- 10 GeV, 0.6 GeV bins
-    if m:
-        lo_w, hi_w = float(m.group(1)) - 10.0, float(m.group(2)) + 10.0
-        edges = np.linspace(lo_w, hi_w, int(round((hi_w - lo_w) / 0.6)) + 1)
+    # binning of startBasis.C's hPtX: pT window +- 10 GeV in 0.6 GeV bins (quenching:
+    # up to the window's upper edge + 200 GeV, where the biased jets' true pT lies)
     with uproot.open(path) as f:
-        if not m:
-            edges = f["hPtX"].axis().edges()
+        edges = f["hPtX"].axis().edges()
+        quench = "hPtQuenched" in f
+        if quench:
+            h_vac, h_que = Hist.from_root(f["hPtVacuum"]), Hist.from_root(f["hPtQuenched"])
         tr = {n: f[n].arrays(["pt_raw", "weight"], library="np") for n in ("tX", "tY", "tRef", "tBiased")}
     h_ref = Hist.fill(tr["tRef"]["pt_raw"], tr["tRef"]["weight"], edges)
     h_bia = Hist.fill(tr["tBiased"]["pt_raw"], tr["tBiased"]["weight"], edges)
@@ -301,6 +302,21 @@ def plot_startbasis(path, plot_dir):
     ax.set_ylabel(r"$\mathrm{d}N/\mathrm{d}p_{\mathrm{T}}$")
     ax.legend()
     save(fig, plot_dir, "pt_spectrum_bias")
+
+    if quench:   # whole spectrum before and after the energy loss, and their ratio
+        fig, ax_top, ax_bot = ratio_figure()
+        draw_hist(ax_top, h_vac, C_REF, label="Vacuum")
+        draw_hist(ax_top, h_que, C_BIASED, label="Quenched")
+        ax_top.set_yscale("log")
+        ax_top.set_ylabel(r"$\mathrm{d}N/\mathrm{d}p_{\mathrm{T}}$")
+        ax_top.legend()
+        draw_ratio(ax_bot, h_que.divide(h_vac), C_BIASED)
+        ax_bot.axhline(1, color="0.5", lw=0.8)
+        ax_bot.set_ylim(0, 1.2)
+        ax_bot.set_xlim(*data_xlim([h_vac, h_que]))
+        ax_bot.set_xlabel(r"$p_{\mathrm{T}}$ (GeV)")
+        ax_bot.set_ylabel("Quenched / vacuum")
+        save(fig, plot_dir, "pt_spectrum_quenched")
 
 
 # ---------------------------------------------------------------------------

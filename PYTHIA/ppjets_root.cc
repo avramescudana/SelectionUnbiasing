@@ -58,6 +58,10 @@ int main(int argc, char* argv[]) {
   std::string outName = args.size() > 1 ? args[1]
                         : "UnbiasingTest_PYTHIApp_pthatmin50_071125_1M.root";
   int seed = args.size() > 2 ? std::stoi(args[2]) : 0;
+  // pTHat range (GeV), optional 4th/5th arguments. Default 50-200; the quenching
+  // bias (BIAS.md) needs a higher maximum, since jets lose energy into the window.
+  std::string pTHatMin = args.size() > 3 ? args[3] : "50.";
+  std::string pTHatMax = args.size() > 4 ? args[4] : "200.";
 
   // Create the ROOT application environment (our own arguments are not
   // passed on, so ROOT does not try to open them as files).
@@ -78,8 +82,8 @@ int main(int argc, char* argv[]) {
   // set to reference center of mass energy for PbPb LHC run 2
   pythia.readString("Beams:eCM = 5360.");
   pythia.readString("HardQCD:all = on");//jets
-  pythia.readString("PhaseSpace:pTHatMin = 50."); // choose a lower pthatmin to avoid edge effects
-  pythia.readString("PhaseSpace:pTHatMax = 200.");
+  pythia.readString("PhaseSpace:pTHatMin = " + pTHatMin); // choose a lower pthatmin to avoid edge effects
+  pythia.readString("PhaseSpace:pTHatMax = " + pTHatMax);
 
   // keeping some options here commented out just in case.
 

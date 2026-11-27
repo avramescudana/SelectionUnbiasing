@@ -93,3 +93,38 @@ UNBIAS_LN_PARAMS=params2 UNBIAS_FILL=1 UNBIAS_TAG=1M_downsampled ./runLognormal.
 
 `plot_pt_bias.ipynb` (needs `uproot`, `numpy`, `matplotlib`) plots the unbiased and biased pT spectra and their ratio against the expected curve: first for the power-law output of `driveBins.C`, then (section "Log-normal bias") for the 100–140 output of `driveBinsLognormal.C`.
 Its `LN_PARAMS` picks the parameter set; the values in its `LN_SETS` are typed by hand and must match the table above. Plots are saved to `Output/plots/`.
+
+# Jet quenching log-normal bias
+
+**Where:** `startBasis()` with `biasType = 2` (block "Quenching" in the event loop), run with `runQuench.sh` (driver `driveBinsQuench.C`).
+
+**How:** every jet of the whole spectrum ($|\eta|<2.4$) loses an energy $\epsilon$, with $\bar\epsilon=\epsilon/\omega_c$ drawn from the log-normal of [Arleo, JHEP 11 (2002) 044](https://arxiv.org/abs/hep-ph/0210104), Eq. (3.7):
+
+$$\bar D(\bar\epsilon)=\frac{1}{\sqrt{2\pi}\,\sigma\,\bar\epsilon}\exp\!\left[-\frac{(\ln\bar\epsilon-\mu)^2}{2\sigma^2}\right],\qquad \langle\epsilon\rangle=\omega_c\,e^{\mu+\sigma^2/2}.$$
+
+Then a pT window is cut (100–200 and 150–250 GeV):
+
+- **Reference** `tRef`: jets with the true pT in the window.
+- **Biased** `tBiased`: jets with the quenched $p_T-\epsilon$ in the window, stored with their true pT and unchanged substructure (`pt_shifted` = quenched pT). They come from higher pT, so the biased mean pT goes up.
+
+The two samples overlap and differ in size; `fillMode` is ignored. The same $\epsilon$ distribution is used for quark and gluon jets.
+
+**Parameters** (Table 1 of the paper), set with `UNBIAS_QUENCH_PARAMS`:
+
+| set | $\mu$ | $\sigma$ | $\langle\epsilon\rangle$ |
+|---|---|---|---|
+| `out` (default, outgoing quark) | −1.5 | 0.73 | $0.3\,\omega_c$ |
+| `in` (incoming quark) | −2.55 | 0.57 | $0.1\,\omega_c$ |
+
+and (`UNBIAS_QUENCH_OMEGAC`, in GeV)
+
+$$\omega_c=\tfrac{1}{2}\hat q L^2=62.5~\mathrm{GeV},\qquad \hat q=5~\mathrm{GeV/fm^2},\quad L=5~\mathrm{fm}.$$
+
+**Running:** the input needs a high pTHat range (`UNBIAS_PTHAT_MIN/MAX` in `generate.sh`, default 50/200). `runQuench.sh` fits with no pT cut and plots the pT histograms up to the window's upper edge + 200 GeV, so the biased jets above the window are included.
+
+```bash
+UNBIAS_PTHAT_MIN=60 UNBIAS_PTHAT_MAX=600 ../PYTHIA/generate.sh 4000000 16 ../Output/MCOutput_4M_hipt
+UNBIAS_TAG=4M_hipt UNBIAS_QUENCH_PARAMS=out ./runQuench.sh ../Output/MCOutput_4M_hipt/
+```
+
+The mean-pT comparison is in `compare_bias.ipynb`, section "Mean jet pT: quenching bias".

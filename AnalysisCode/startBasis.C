@@ -179,10 +179,24 @@ void startBasis(const char* inputDir = "/path/to/MCOutput/",  // no sensible def
                 //                 reference size.
                 //   fillMode = 1: fully biased. Reference = all jets; biased =
                 //                 the kept jets (no jet repeated, smaller sample).
-                int fillMode = 0) {
+                //   Ignored for biasType = 2.
+                int fillMode = 0,
+                // biasType = 2 only (quenching, see BIAS.md): every jet loses
+                // eps = omegaC * exp(lnMu + lnSigma * g), g ~ N(0,1), i.e.
+                // eps/omegaC follows the log-normal of Arleo, JHEP 11 (2002) 044,
+                // Eq. (3.7), with lnMu, lnSigma its mu, sigma. omegaC in GeV.
+                double omegaC = 62.5) {
 
-  if (fillMode != 0 && fillMode != 1) {
+  if (biasType < 0 || biasType > 2) {
+    std::cerr << "startBasis: biasType = " << biasType << " is not 0, 1 or 2 (see BIAS.md)" << std::endl;
+    return;
+  }
+  if (biasType != 2 && fillMode != 0 && fillMode != 1) {
     std::cerr << "startBasis: fillMode = " << fillMode << " is not 0 or 1 (see BIAS.md)" << std::endl;
+    return;
+  }
+  if (biasType == 2 && !(omegaC > 0.0 && lnSigma > 0.0)) {
+    std::cerr << "startBasis: quenching needs omegaC > 0 and lnSigma > 0" << std::endl;
     return;
   }
 
@@ -295,11 +309,18 @@ void startBasis(const char* inputDir = "/path/to/MCOutput/",  // no sensible def
 
   // Histograms
   // pT window +- 10 GeV in 0.6 GeV bins (90-150 GeV, 100 bins for the 100-140 window)
+  // Quenching (biasType 2): the biased jets have a true pT above the window,
+  // so the range goes up to pTHigh + 200 GeV.
   const double ptMin = pTLow - 10.0;
-  const double ptMax = pTHigh + 10.0;
+  const double ptMax = pTHigh + ((biasType == 2) ? 200.0 : 10.0);
   const int nBins = (int)std::lround((ptMax - ptMin) / 0.6);
   TH1D* hPtX  = new TH1D("hPtX", "; #it{p}_{T} (GeV); d#it{N}/d#it{p}_{T}", nBins, ptMin, ptMax);
   TH1D* hPtY = new TH1D("hPtY","; #it{p}_{T} (GeV); d#it{N}/d#it{p}_{T}", nBins, ptMin, ptMax);
+
+  // Quenching (biasType 2): the whole spectrum before and after the energy
+  // loss (all jets with |eta| < 2.4), 5 GeV bins.
+  TH1D* hPtVacuum   = new TH1D("hPtVacuum",   "; #it{p}_{T} (GeV); d#it{N}/d#it{p}_{T}", 140, 0.0, 700.0);
+  TH1D* hPtQuenched = new TH1D("hPtQuenched", "; #it{p}_{T} (GeV); d#it{N}/d#it{p}_{T}", 140, 0.0, 700.0);
 
   hPtX->SetLineColor(kBlack);
   hPtY->SetLineColor(kRed);
@@ -387,6 +408,12 @@ void startBasis(const char* inputDir = "/path/to/MCOutput/",  // no sensible def
   std::vector<JetRec> y_cache;       // Y jets, the fill-up pool for Y' (fillMode 0 and 1)
   std::mt19937 rng(rngSeed);
   std::uniform_real_distribution<double> uni01(0.0, 1.0);
+  std::normal_distribution<double> gaus01(0.0, 1.0);
+  if (biasType == 2) {
+    const double meanEps = omegaC * std::exp(lnMu + 0.5 * lnSigma * lnSigma);
+    std::cout << "Quenching: eps/omegaC log-normal, mu=" << lnMu << " sigma=" << lnSigma
+              << ", omegaC=" << omegaC << " GeV, <eps>=" << meanEps << " GeV" << std::endl;
+  }
 
   // -----------------------------
   // Event loop
@@ -413,6 +440,39 @@ void startBasis(const char* inputDir = "/path/to/MCOutput/",  // no sensible def
         const std::vector<std::vector<double>>* sj = subjet_in[r]->Get();
         out_subjet_pt[r] = (sj && j < (int)sj->size())
                            ? (*sj)[j] : std::vector<double>();
+      }
+
+      // ---- Quenching (biasType 2) ----
+      // Every jet loses eps (log-normal in eps/omegaC). Reference = jets with
+      // the true pT in the window; biased = jets with the quenched pT
+      // pT - eps in the window, stored with their true pT and substructure
+      // (pt_shifted = quenched pT). The two samples overlap and differ in size.
+      if (biasType == 2) {
+        const double ptQ = ptRaw - omegaC * std::exp(lnMu + lnSigma * gaus01(rng));
+        hPtVacuum->Fill(ptRaw, *weight);
+        if (ptQ > 0.0) hPtQuenched->Fill(ptQ, *weight);
+        const bool inRef    = (pTLow < ptRaw) && (ptRaw < pTHigh);
+        const bool inBiased = (pTLow < ptQ) && (ptQ < pTHigh);
+        if (!inRef && !inBiased) continue;
+        out_pt = ptRaw;
+        out_pt_raw = ptRaw;
+        out_pt_shifted = ptQ;
+        out_eta = eta[j];
+        out_phi = phi[j];
+        out_mass = mass[j];
+        out_weight = *weight;
+        out_const_pt = (*const_pt)[j];
+        out_const_eta = (*const_eta)[j];
+        out_const_phi = (*const_phi)[j];
+        out_source = 0;
+        if (inRef) {
+          hPtX->Fill(ptRaw, *weight);
+          tX->Fill();
+          tRef->Fill();
+          tPP->Fill();
+        }
+        if (inBiased) tBiased->Fill();
+        continue;
       }
 
       // Each jet in the pT window is an X jet (source 0: downsampled into
@@ -545,7 +605,8 @@ void startBasis(const char* inputDir = "/path/to/MCOutput/",  // no sensible def
 
   TLegend* leg = new TLegend(0.50, 0.78, 0.88, 0.88);
   leg->AddEntry(hRef, "Unbiased (X #cup Y)", "l");
-  leg->AddEntry(hBiased, (fillMode == 1) ? "Fully biased" : "Partly biased (X down + Y')", "l");
+  leg->AddEntry(hBiased, (biasType == 2) ? "Quenched p_{T} in window"
+                         : (fillMode == 1) ? "Fully biased" : "Partly biased (X down + Y')", "l");
   leg->SetBorderSize(0);
   leg->Draw();
 
@@ -556,6 +617,7 @@ void startBasis(const char* inputDir = "/path/to/MCOutput/",  // no sensible def
   plotSuffix.ReplaceAll(".root", "");
   plotSuffix.ReplaceAll("startBasis", "");
   if (biasType == 1 && !plotSuffix.Contains("lognormal")) plotSuffix += "_lognormal";
+  if (biasType == 2 && !plotSuffix.Contains("quench")) plotSuffix += "_quench";
   // Empty plotDir: no ROOT plot (UNBIAS_PLOTTER=matplotlib, see unbiasRootPlotDir()).
   if (plotDir && plotDir[0]) {
     gSystem->mkdir(plotDir, kTRUE);
@@ -566,6 +628,10 @@ void startBasis(const char* inputDir = "/path/to/MCOutput/",  // no sensible def
   hPtX->Write();
   hPtY->Write();
   hpTpp->Write();
+  if (biasType == 2) {
+    hPtVacuum->Write();
+    hPtQuenched->Write();
+  }
   c->Write();
   tX->Write();
   tY->Write();

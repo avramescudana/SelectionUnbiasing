@@ -73,6 +73,12 @@
 // drift from the window that was actually plotted. Integer-valued bin edges
 // are formatted without a decimal point (e.g. "100", not "100.0").
 //
+// --pt-hist-min / --pt-hist-max (default: --pt-min / --pt-max) set the range
+// of the pT histograms and of the jets that enter the substructure
+// histograms, without changing the bin label or file names. The quenching
+// bias (BIAS.md) needs a wider range: its biased jets have a true pT above
+// the window (only their quenched pT is inside it).
+//
 // BASIS-VECTOR PANEL CONFIGURABILITY
 // -----------------------------------
 // unbias_weights.cc can fit a basis with dozens of terms (EEC grid x
@@ -539,6 +545,8 @@ int main(int argc, char* argv[]) {
   const std::string out_name = get_arg(argc, argv, "--out",
                                        "unbias_weights_plots_" + pt_suffix + ".root");
   const int nbins = std::stoi(get_arg(argc, argv, "--nbins", "80"));
+  const double pt_hist_min = std::stod(get_arg(argc, argv, "--pt-hist-min", std::to_string(pt_min)));
+  const double pt_hist_max = std::stod(get_arg(argc, argv, "--pt-hist-max", std::to_string(pt_max)));
   const int eec_bins = std::stoi(get_arg(argc, argv, "--eec-bins", "60"));
   const double eec_max = std::stod(get_arg(argc, argv, "--eec-max", "0.4"));
   const double eec_logmin_val = std::stod(get_arg(argc, argv, "--eec-logmin", "0.004"));
@@ -664,9 +672,9 @@ int main(int argc, char* argv[]) {
   // which understates/misstates the true statistical uncertainty and is
   // silently wrong for anything downstream that reads these bin errors
   // (including every ratio panel below, via TH1::Divide).
-  TH1D *h_base = new TH1D("h_base", "pT; p_{T} [GeV]; weighted entries", nbins, pt_min, pt_max);
-  TH1D *h_total = new TH1D("h_total", "pT; p_{T} [GeV]; weighted entries", nbins, pt_min, pt_max);
-  TH1D *h_target = new TH1D("h_target", "pT; p_{T} [GeV]; entries", nbins, pt_min, pt_max);
+  TH1D *h_base = new TH1D("h_base", "pT; p_{T} [GeV]; weighted entries", nbins, pt_hist_min, pt_hist_max);
+  TH1D *h_total = new TH1D("h_total", "pT; p_{T} [GeV]; weighted entries", nbins, pt_hist_min, pt_hist_max);
+  TH1D *h_target = new TH1D("h_target", "pT; p_{T} [GeV]; entries", nbins, pt_hist_min, pt_hist_max);
   TH1D *h_w_unbias = new TH1D("h_w_unbias", "unbias weight; w; entries", 80, 0.0, 2.0);
   h_base->Sumw2(); h_total->Sumw2(); h_target->Sumw2(); h_w_unbias->Sumw2();
 
@@ -739,7 +747,7 @@ int main(int argc, char* argv[]) {
     h_base->Fill(pt, w_base);
     h_total->Fill(pt, w_total);
     h_w_unbias->Fill(w_unbias);
-    const bool in_window = (pt >= pt_min && pt <= pt_max);
+    const bool in_window = (pt >= pt_hist_min && pt <= pt_hist_max);
 
     if (in_window && has_src_mass) {
       h_mass_base->Fill(src_mass, w_base);
@@ -833,7 +841,7 @@ int main(int argc, char* argv[]) {
   for (Long64_t i = 0; i < tentries; ++i) {
     tt->GetEntry(i);
     h_target->Fill(tpt, tw);
-    const bool t_in_window = (tpt >= pt_min && tpt <= pt_max);
+    const bool t_in_window = (tpt >= pt_hist_min && tpt <= pt_hist_max);
 
     if (t_in_window && target_has_mass) h_mass_target->Fill(t_mass, tw);
 
@@ -1181,7 +1189,7 @@ int main(int argc, char* argv[]) {
               if (v > 0.0) { gmin[p] = std::min(gmin[p], v); gmax[p] = std::max(gmax[p], v); }
             }
           };
-          for (Long64_t i = 0; i < ns; ++i) { tsrc->GetEntry(i); if (spt < pt_min || spt > pt_max) continue; scan(sg); }
+          for (Long64_t i = 0; i < ns; ++i) { tsrc->GetEntry(i); if (spt < pt_hist_min || spt > pt_hist_max) continue; scan(sg); }
           for (Long64_t i = 0; i < nt; ++i) { ttar->GetEntry(i); scan(tg); }
 
           // build histograms with data-driven log binning (handles tiny EEC and huge pT^n alike)
@@ -1209,7 +1217,7 @@ int main(int argc, char* argv[]) {
           // pass 2: fill
           for (Long64_t i = 0; i < ns; ++i) {
             tsrc->GetEntry(i);
-            if (spt < pt_min || spt > pt_max) continue;
+            if (spt < pt_hist_min || spt > pt_hist_max) continue;
             if (!sg) continue;
             for (int p = 0; p < nphys; ++p) {
               const int k = panel_idx[p];

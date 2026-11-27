@@ -11,6 +11,9 @@
 #              Use a different firstSeed when adding more statistics to an
 #              existing sample, otherwise the new events repeat the old ones.
 #
+# pTHat range: UNBIAS_PTHAT_MIN / UNBIAS_PTHAT_MAX in GeV (default 50 / 200).
+# The quenching bias (AnalysisCode/BIAS.md) needs a higher maximum, e.g. 600.
+#
 # Example (4M events on 16 cores):
 #   PYTHIA/generate.sh 4000000 16 /path/to/MCOutput_4M
 #
@@ -23,13 +26,15 @@
 set -e
 
 if [ $# -lt 3 ]; then
-  sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//'
   exit 1
 fi
 NEVENTS=$1
 NJOBS=$2
 OUTDIR=$3
 FIRSTSEED=${4:-1}
+PTHAT_MIN=${UNBIAS_PTHAT_MIN:-50}
+PTHAT_MAX=${UNBIAS_PTHAT_MAX:-200}
 
 if [ -z "$CONDA_PREFIX" ]; then
   echo "generate.sh: CONDA_PREFIX is not set; activate the conda env first (see SETUP.md)." >&2
@@ -67,13 +72,13 @@ export PYTHIA8DATA=${PYTHIA8DATA:-$CONDA_PREFIX/share/Pythia8/xmldoc}
 # Split the events; the first (NEVENTS % NJOBS) jobs take one extra event.
 PER=$((NEVENTS / NJOBS))
 REST=$((NEVENTS % NJOBS))
-echo "Running $NJOBS jobs, $NEVENTS events in total, seeds $FIRSTSEED..$((FIRSTSEED + NJOBS - 1))"
+echo "Running $NJOBS jobs, $NEVENTS events in total, seeds $FIRSTSEED..$((FIRSTSEED + NJOBS - 1)), pTHat $PTHAT_MIN-$PTHAT_MAX GeV"
 PIDS=()
 for ((i = 1; i <= NJOBS; i++)); do
   N=$PER
   [ $i -le $REST ] && N=$((N + 1))
   SEED=$((FIRSTSEED + i - 1))
-  "$EXE" "$N" "$OUTDIR/pythia_$i.root" "$SEED" > "$OUTDIR/logs/job_$i.log" 2>&1 &
+  "$EXE" "$N" "$OUTDIR/pythia_$i.root" "$SEED" "$PTHAT_MIN" "$PTHAT_MAX" > "$OUTDIR/logs/job_$i.log" 2>&1 &
   PIDS+=($!)
 done
 
